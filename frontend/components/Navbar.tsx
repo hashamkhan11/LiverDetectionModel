@@ -23,9 +23,7 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen]   = useState(false)
 
   useEffect(() => {
-    checkHealth()
-      .then(() => setApiUp(true))
-      .catch(() => setApiUp(false))
+    checkHealth().then(data => setApiUp(data.status === 'healthy'))
   }, [])
 
   // All hooks above — early return is safe here
