@@ -43,6 +43,12 @@ export async function resetEvaluation(): Promise<{ success: boolean }> {
 }
 
 export async function checkHealth(): Promise<{ status: string }> {
-  const res = await fetch(`${BASE_URL}/health`, { signal: AbortSignal.timeout(5000) })
-  return res.json()
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 5000)
+  try {
+    const res = await fetch(`${BASE_URL}/health`, { signal: controller.signal })
+    return res.json()
+  } finally {
+    clearTimeout(timer)
+  }
 }
