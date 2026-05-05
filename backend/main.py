@@ -736,4 +736,4 @@ if __name__ == "__main__":
     print("  - ResNet18 with frozen early layers")
     print("  - Dropout(0.5) + Linear(256) + ReLU + Dropout(0.3) + Linear(2)")
     print("=" * 50 + "\n")
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
