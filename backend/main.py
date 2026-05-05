@@ -4,7 +4,7 @@ import torch
 from huggingface_hub import hf_hub_download
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import models
+from torchvision import models, transforms
 from PIL import Image
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, Form
@@ -176,34 +176,24 @@ evaluator = EvaluationMetrics()
 # ============================================
 # PREPROCESSING (SAME AS YOUR TRAINING)
 # ============================================
+_infer_transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
 def preprocess_ct_slice(slice_2d: np.ndarray) -> torch.Tensor:
-    """Preprocess a single CT slice - MATCHES YOUR TRAINING PREPROCESSING"""
     img = slice_2d.astype(np.float32)
-    
-    # Min-max normalization to [0, 1] (YOUR training preprocessing)
-    min_val = img.min()
-    max_val = img.max()
-    if max_val - min_val > 0:
+
+    # Min-max normalize to [0, 1]
+    min_val, max_val = img.min(), img.max()
+    if max_val > min_val:
         img = (img - min_val) / (max_val - min_val)
-    else:
-        img = img - min_val
-    
-    # Convert to 3-channel (model expects RGB)
-    img = np.stack([img, img, img], axis=0)
-    
-    # Resize to 224x224 (model input size)
-    img = torch.from_numpy(img).float()
-    img = F.interpolate(
-        img.unsqueeze(0), size=(224, 224),
-        mode='bilinear', align_corners=False
-    ).squeeze(0)
-    
-    # Normalize with ImageNet stats (model's transform expects this)
-    mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-    img = (img - mean) / std
-    
-    return img.unsqueeze(0)
+
+    # Convert to uint8 PIL RGB — matches notebook inference exactly
+    pil_image = Image.fromarray((img * 255).astype(np.uint8)).convert('RGB')
+
+    return _infer_transform(pil_image).unsqueeze(0)
 
 def extract_all_slices_from_nifti(nifti_data: bytes):
     """Extract and process ALL slices from the volume"""
