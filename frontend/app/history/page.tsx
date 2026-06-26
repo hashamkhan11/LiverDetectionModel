@@ -2,12 +2,12 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
-import { ScanLine, Filter, Loader2, CheckCircle2, AlertTriangle, ClipboardCheck } from 'lucide-react'
+import { ScanLine, Filter, Loader2, CheckCircle2, AlertTriangle, XCircle, ClipboardCheck } from 'lucide-react'
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { getScanHistory } from '@/lib/firestore'
 import type { ScanRecord } from '@/lib/types'
 
-type FilterType = 'all' | 'tumor' | 'non-tumor'
+type FilterType = 'all' | 'tumor' | 'non-tumor' | 'not-liver'
 
 export default function HistoryPage() {
   const { user, loading: authLoading } = useRequireAuth()
@@ -66,14 +66,17 @@ export default function HistoryPage() {
           />
         </div>
         <div className="flex gap-2">
-          {(['all', 'tumor', 'non-tumor'] as FilterType[]).map(f => (
+          {(['all', 'tumor', 'non-tumor', 'not-liver'] as FilterType[]).map(f => (
             <button key={f} onClick={() => setFilter(f)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 filter === f
-                  ? f === 'tumor' ? 'bg-red-100 text-red-700' : f === 'non-tumor' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
+                  ? f === 'tumor'     ? 'bg-red-100 text-red-700'
+                  : f === 'non-tumor' ? 'bg-emerald-100 text-emerald-700'
+                  : f === 'not-liver' ? 'bg-amber-100 text-amber-700'
+                  :                    'bg-blue-100 text-blue-700'
                   : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'
               }`}>
-              {f === 'all' ? 'All' : f === 'tumor' ? 'Tumor' : 'Healthy'}
+              {f === 'all' ? 'All' : f === 'tumor' ? 'Tumor' : f === 'non-tumor' ? 'Healthy' : 'Not Liver'}
             </button>
           ))}
         </div>
@@ -127,20 +130,22 @@ export default function HistoryPage() {
                   {/* Result */}
                   <div className="col-span-2">
                     <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
-                      scan.result.result_class === 'tumor'
-                        ? 'bg-red-50 text-red-600'
-                        : 'bg-emerald-50 text-emerald-700'
+                      scan.result.result_class === 'tumor'      ? 'bg-red-50 text-red-600'
+                      : scan.result.result_class === 'not-liver' ? 'bg-amber-50 text-amber-600'
+                      : 'bg-emerald-50 text-emerald-700'
                     }`}>
-                      {scan.result.result_class === 'tumor'
-                        ? <AlertTriangle className="w-3 h-3" />
-                        : <CheckCircle2 className="w-3 h-3" />}
-                      {scan.result.result_class === 'tumor' ? 'Tumor' : 'Healthy'}
+                      {scan.result.result_class === 'tumor'      ? <AlertTriangle className="w-3 h-3" />
+                      : scan.result.result_class === 'not-liver' ? <XCircle className="w-3 h-3" />
+                      : <CheckCircle2 className="w-3 h-3" />}
+                      {scan.result.result_class === 'tumor'      ? 'Tumor'
+                      : scan.result.result_class === 'not-liver' ? 'Not Liver'
+                      : 'Healthy'}
                     </span>
                   </div>
 
                   {/* Confidence */}
                   <div className="col-span-1 text-sm font-medium text-slate-700">
-                    {scan.result.tumor_probability.toFixed(1)}%
+                    {scan.result.result_class === 'not-liver' ? '—' : `${scan.result.tumor_probability.toFixed(1)}%`}
                   </div>
 
                   {/* Evaluated */}

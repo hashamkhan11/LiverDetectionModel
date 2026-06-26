@@ -10,7 +10,7 @@ const steps = [
   {
     icon: FileSearch,
     title: 'AI Analysis',
-    desc: 'ResNet18 analyzes every slice of the volume using the 70% / 11% detection logic.',
+    desc: 'A two-stage pipeline first verifies the scan is a liver CT, then a ResNet18 model analyses each slice using the 70% / 11% detection logic with Grad-CAM visualisation.',
   },
   {
     icon: CheckCircle,

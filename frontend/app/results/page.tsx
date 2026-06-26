@@ -48,7 +48,7 @@ export default function ResultsPage() {
     try {
       await Promise.all([
         submitEvaluation(filename, result.result_class, actualClass, confidence, result.slices_analyzed, result.affected_ratio),
-        scanId ? saveEvaluation(scanId, actualClass, result.result_class) : Promise.resolve(),
+        scanId ? saveEvaluation(scanId, actualClass, result.result_class as 'tumor' | 'non-tumor') : Promise.resolve(),
       ])
       setSubmitted(true)
     } catch {

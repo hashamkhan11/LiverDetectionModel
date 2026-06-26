@@ -114,7 +114,11 @@ export default function DashboardPage() {
           <div className="divide-y divide-slate-100">
             {recent.map(scan => (
               <div key={scan.id} className="flex items-center gap-4 px-6 py-4 hover:bg-slate-50 transition-colors">
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${scan.result.result_class === 'tumor' ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  scan.result.result_class === 'tumor'      ? 'bg-red-500'
+                  : scan.result.result_class === 'not-liver' ? 'bg-amber-500'
+                  : 'bg-emerald-500'
+                }`} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-slate-800 truncate">{scan.filename}</p>
                   <p className="text-xs text-slate-400">
@@ -124,14 +128,16 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                  scan.result.result_class === 'tumor'
-                    ? 'bg-red-50 text-red-600'
-                    : 'bg-emerald-50 text-emerald-700'
+                  scan.result.result_class === 'tumor'      ? 'bg-red-50 text-red-600'
+                  : scan.result.result_class === 'not-liver' ? 'bg-amber-50 text-amber-600'
+                  : 'bg-emerald-50 text-emerald-700'
                 }`}>
-                  {scan.result.result_class === 'tumor' ? 'Tumor' : 'Healthy'}
+                  {scan.result.result_class === 'tumor'      ? 'Tumor'
+                  : scan.result.result_class === 'not-liver' ? 'Not Liver'
+                  : 'Healthy'}
                 </span>
                 <span className="text-sm text-slate-500 font-medium w-14 text-right">
-                  {scan.result.tumor_probability.toFixed(1)}%
+                  {scan.result.result_class === 'not-liver' ? '—' : `${scan.result.tumor_probability.toFixed(1)}%`}
                 </span>
               </div>
             ))}
