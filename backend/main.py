@@ -1,6 +1,5 @@
 import os
 import torch
-from huggingface_hub import hf_hub_download
 import torch.nn as nn
 from torchvision import models, transforms
 from PIL import Image, ImageDraw
@@ -120,7 +119,7 @@ def _build_liver_model():
 
 
 # ============================================================
-# LOAD TUMOR MODEL (Stage 2) — from HuggingFace Hub
+# LOAD TUMOR MODEL (Stage 2) — local file
 # ============================================================
 def _clean_state_dict(raw):
     """Strip resnet./module. prefixes from keys when present."""
@@ -134,19 +133,17 @@ def _clean_state_dict(raw):
     return out
 
 
-def _get_tumor_model_path() -> str:
-    repo_id = os.environ.get("HF_MODEL_REPO", "hashammubarak1/lits_tumor_model_fixed")
-    token   = os.environ.get("HF_TOKEN", None)
-    print(f"  Downloading tumor model from HuggingFace ({repo_id})…")
-    return hf_hub_download(repo_id=repo_id,
-                           filename="lits_tumor_model_fixed.pth",
-                           token=token)
+TUMOR_MODEL_PATH = os.path.join(MODEL_DIR, "lits_tumor_model_fixed.pth")
 
+if not os.path.exists(TUMOR_MODEL_PATH):
+    raise FileNotFoundError(
+        f"Tumor model not found at {TUMOR_MODEL_PATH}\n"
+        "Place lits_tumor_model_fixed.pth in backend/model/"
+    )
 
 tumor_model = _build_tumor_model()
-_tumor_path = _get_tumor_model_path()
 tumor_model.load_state_dict(_clean_state_dict(
-    torch.load(_tumor_path, map_location=device, weights_only=False)), strict=True)
+    torch.load(TUMOR_MODEL_PATH, map_location=device, weights_only=False)), strict=True)
 tumor_model.to(device).eval()
 print("✅ Tumor model loaded (Stage 2)")
 
