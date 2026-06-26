@@ -14,7 +14,7 @@ export interface ScanRecord {
 
 export interface PredictionResult {
   prediction: string
-  result_class: 'tumor' | 'non-tumor'
+  result_class: 'tumor' | 'non-tumor' | 'not-liver'
   tumor_probability: number
   non_tumor_probability: number
   slices_analyzed?: number
@@ -23,6 +23,13 @@ export interface PredictionResult {
   affected_slices?: string
   affected_ratio?: string
   decision_reason?: string
+  // Grad-CAM heatmap images (base64 PNG, only present when tumor detected)
+  heatmap_image?: string | null
+  original_image?: string | null
+  heatmap_error?: string | null
+  // Stage 1 liver check fields
+  liver_probability?: number
+  liver_slices_checked?: number
 }
 
 export interface MetricsData {

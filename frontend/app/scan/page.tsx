@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Upload, FileImage, X, Loader2, AlertCircle, Info } from 'lucide-react'
 import { predictScan } from '@/lib/api'
+import type { PredictionResult } from '@/lib/types'
 import { saveScan } from '@/lib/firestore'
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 
@@ -44,13 +45,34 @@ export default function ScanPage() {
     setError(null)
     try {
       const result = await predictScan(file)
-      const scanId = await saveScan(user.uid, file.name, result)
+
+      // Store full result (with heatmap base64) in sessionStorage for results page
       sessionStorage.setItem('liver_result',   JSON.stringify(result))
       sessionStorage.setItem('liver_filename', file.name)
-      sessionStorage.setItem('liver_scan_id',  scanId)
+
+      // Strip heatmap images before saving to Firestore (too large for Firestore docs)
+      const firestoreResult: PredictionResult = {
+        prediction:           result.prediction,
+        result_class:         result.result_class,
+        tumor_probability:    result.tumor_probability,
+        non_tumor_probability: result.non_tumor_probability,
+        slices_analyzed:      result.slices_analyzed,
+        max_probability:      result.max_probability,
+        mean_probability:     result.mean_probability,
+        affected_slices:      result.affected_slices,
+        affected_ratio:       result.affected_ratio,
+        decision_reason:      result.decision_reason,
+        heatmap_error:        result.heatmap_error,
+        liver_probability:    result.liver_probability,
+        liver_slices_checked: result.liver_slices_checked,
+      }
+
+      const scanId = await saveScan(user.uid, file.name, firestoreResult)
+      sessionStorage.setItem('liver_scan_id', scanId)
+
       router.push('/results')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Analysis failed. Is the API running?')
+      setError(err instanceof Error ? err.message : 'Analysis failed. Is the backend running?')
       setLoading(false)
     }
   }
@@ -147,9 +169,10 @@ export default function ScanPage() {
       </button>
 
       {loading && (
-        <p className="text-center text-xs text-slate-400 mt-3 animate-pulse-dot">
-          {isNifti ? 'Processing full volume — this may take 30–60 seconds…'
-                   : 'Running inference on your image…'}
+        <p className="text-center text-xs text-slate-400 mt-3 animate-pulse">
+          {isNifti
+            ? 'Stage 1: checking for liver tissue, then Stage 2: tumor analysis… this may take 1–2 minutes.'
+            : 'Running inference on your image…'}
         </p>
       )}
 

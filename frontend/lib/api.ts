@@ -7,10 +7,11 @@ export async function predictScan(file: File): Promise<PredictionResult> {
   fd.append('file', file)
   const res = await fetch(`${BASE_URL}/predict`, { method: 'POST', body: fd })
   if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.error ?? 'Prediction failed')
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error ?? 'Prediction failed')
   }
-  return res.json()
+  const text = await res.text()
+  return JSON.parse(text) as PredictionResult
 }
 
 export async function submitEvaluation(
@@ -42,7 +43,7 @@ export async function resetEvaluation(): Promise<{ success: boolean }> {
   return res.json()
 }
 
-export async function checkHealth(): Promise<{ status: string }> {
+export async function checkHealth(): Promise<{ status: string; liver_model_enabled?: boolean; pipeline?: string }> {
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 5000)
