@@ -1,0 +1,164 @@
+============================================================
+   LiverDetect AI -- Setup & Run Guide for Mahnoor
+============================================================
+
+Follow these steps in order. Do each step only once
+(except Step 5 -- do that every time you want to run).
+
+
+------------------------------------------------------------
+STEP 1 -- Install Required Software (one-time only)
+------------------------------------------------------------
+
+You need three programs installed:
+
+  A) Python 3.11
+     Download: https://www.python.org/downloads/
+     IMPORTANT: During install, tick the checkbox
+                "Add Python to PATH" before clicking Install
+
+  B) Node.js (LTS version)
+     Download: https://nodejs.org/
+     Just install with all defaults.
+
+  C) Git
+     Download: https://git-scm.com/download/win
+     Just install with all defaults.
+
+After installing, restart VS Code.
+
+
+------------------------------------------------------------
+STEP 2 -- Get the Project from GitHub (one-time only)
+------------------------------------------------------------
+
+Option A -- Using VS Code (easiest):
+
+  1. Open VS Code
+  2. Press Ctrl + Shift + P
+  3. Type: Git: Clone
+  4. Press Enter
+  5. Paste this URL:
+        https://github.com/hashamkhan11/LiverDetectionModel.git
+  6. Choose a folder where to save it (e.g. D:\)
+  7. Click "Open" when VS Code asks
+
+Option B -- Using Command Prompt:
+
+  1. Open Command Prompt
+  2. Run:
+        git clone https://github.com/hashamkhan11/LiverDetectionModel.git "D:\Mahnoor Work"
+
+
+------------------------------------------------------------
+STEP 3 -- Pull Latest Changes (do this whenever Hasham
+          pushes an update)
+------------------------------------------------------------
+
+Option A -- In VS Code:
+
+  1. Open your project folder in VS Code
+  2. Click the Source Control icon in the left sidebar
+     (looks like a branch/fork icon, or press Ctrl+Shift+G)
+  3. Click the three dots menu ( ... ) at the top
+  4. Click Pull
+  5. Done -- you have the latest code.
+
+Option B -- In Terminal inside VS Code:
+
+  1. Press Ctrl + ` (backtick) to open terminal
+  2. Run:
+        git pull
+
+
+------------------------------------------------------------
+STEP 4 -- Install AI Models (one-time only)
+------------------------------------------------------------
+
+The two AI model files (.pth files) are NOT on GitHub
+because they are too large. Hasham will give them to you
+via USB, WhatsApp, or Google Drive.
+
+The two files you need:
+  - liver_model.pth          (about 43 MB)
+  - lits_tumor_model_fixed.pth  (about 108 MB)
+
+Once you have the files:
+
+  Method 1 -- Automatic (recommended):
+    1. Copy BOTH .pth files into this folder:
+          D:\Mahnoor Work\backend\
+       (same folder where setup.bat is)
+    2. Double-click setup.bat
+    3. It will find the files and install them automatically.
+
+  Method 2 -- Manual (if automatic fails):
+    1. Create this folder if it does not exist:
+          D:\Mahnoor Work\backend\backend\model\
+    2. Copy BOTH .pth files into that model\ folder.
+
+
+------------------------------------------------------------
+STEP 5 -- Run the Project (do this every time)
+------------------------------------------------------------
+
+  1. Open the folder: D:\Mahnoor Work\backend\
+  2. Double-click run.bat
+  3. Wait about 30 seconds (models are loading)
+  4. The browser will open automatically at:
+          http://localhost:3000
+  5. Keep both black windows open while using the app.
+  6. When done, close both black windows.
+
+
+------------------------------------------------------------
+STEP 6 -- Firebase .env.local File (one-time only)
+------------------------------------------------------------
+
+The app needs a Firebase config file to handle login.
+This file is called .env.local and Hasham should give it
+to you separately.
+
+  1. Get the .env.local file from Hasham
+  2. Copy it into this folder:
+          D:\Mahnoor Work\backend\frontend\
+  3. That is it -- do not rename it.
+
+
+------------------------------------------------------------
+COMMON PROBLEMS
+------------------------------------------------------------
+
+Problem: "Python is not installed"
+Fix: Reinstall Python and make sure to tick
+     "Add Python to PATH" during install.
+
+Problem: Browser shows "This site can't be reached"
+Fix: Wait a bit longer -- the model loading takes
+     20-30 seconds. Then refresh the page.
+
+Problem: Black window says "liver_model.pth not found"
+Fix: Run setup.bat first, or manually copy the .pth
+     files to backend\backend\model\
+
+Problem: Login/Register not working
+Fix: Make sure frontend\.env.local exists with the
+     correct Firebase keys from Hasham.
+
+Problem: "npm: command not found"
+Fix: Reinstall Node.js from https://nodejs.org/
+
+
+------------------------------------------------------------
+QUICK CHECKLIST
+------------------------------------------------------------
+
+  [ ] Python installed (with PATH ticked)
+  [ ] Node.js installed
+  [ ] Git installed
+  [ ] Project cloned from GitHub
+  [ ] .env.local file in frontend\ folder
+  [ ] Both .pth model files installed (via setup.bat)
+  [ ] run.bat works and browser opens
+
+============================================================
