@@ -19,10 +19,10 @@ warnings.filterwarnings("ignore")
 try:
     import nibabel as nib
     NIBABEL_AVAILABLE = True
-    print("✅ NIfTI support enabled")
+    print("[OK] NIfTI support enabled")
 except ImportError:
     NIBABEL_AVAILABLE = False
-    print("⚠️  nibabel not installed — NIfTI uploads will be rejected")
+    print("[WARN] nibabel not installed -- NIfTI uploads will be rejected")
 
 app = FastAPI(title="Liver Tumor Detection API", version="6.0.0")
 app.add_middleware(
@@ -145,7 +145,7 @@ tumor_model = _build_tumor_model()
 tumor_model.load_state_dict(_clean_state_dict(
     torch.load(TUMOR_MODEL_PATH, map_location=device, weights_only=False)), strict=True)
 tumor_model.to(device).eval()
-print("✅ Tumor model loaded (Stage 2)")
+print("[OK] Tumor model loaded (Stage 2)")
 
 
 # ============================================================
@@ -164,12 +164,12 @@ if os.path.exists(LIVER_MODEL_PATH):
             strict=True)
         liver_model.to(device).eval()
         LIVER_MODEL_ENABLED = True
-        print("✅ Liver model loaded (Stage 1 ENABLED)")
+        print("[OK] Liver model loaded (Stage 1 ENABLED)")
     except Exception as e:
         liver_model = None
-        print(f"❌ Liver model failed to load: {e}")
+        print(f"[ERROR] Liver model failed to load: {e}")
 else:
-    print(f"⚠️  liver_model.pth not found in backend/model/ — Stage 1 disabled")
+    print("[WARN] liver_model.pth not found in backend/model/ -- Stage 1 disabled")
 
 print("=" * 60)
 
@@ -329,7 +329,7 @@ def _tumor_prob_and_gradcam(tensor: torch.Tensor) -> tuple:
         if cam is None:
             raise ValueError("cam is None")
     except Exception as e:
-        print(f"  ⚠️  Grad-CAM failed: {e} — using fallback")
+        print(f"  [WARN] Grad-CAM failed: {e} -- using fallback")
         cam = t[0, 0].cpu().numpy()
         cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
     return prob, cam, cls
@@ -381,7 +381,7 @@ def _make_heatmap_images(slice_2d: np.ndarray, cam: np.ndarray) -> tuple:
 
         return to_b64(orig), to_b64(ovl)
     except Exception as e:
-        print(f"  ❌ Heatmap creation failed: {e}")
+        print(f"  [ERROR] Heatmap creation failed: {e}")
         return None, None
 
 
@@ -423,12 +423,12 @@ async def predict(file: UploadFile = File(...)):
 
             # ── Stage 1: Liver check ──────────────────────────────────
             if LIVER_MODEL_ENABLED:
-                print(f"\n🔬 Stage 1 — Liver check ({len(raw_slices)} slices)…")
+                print(f"\n[Stage 1] Liver check ({len(raw_slices)} slices)...")
                 is_liver, liver_ratio, liver_count, total = stage1_volume(raw_slices)
                 print(f"  Liver slices: {liver_count}/{total} ({liver_ratio:.1f}%)")
 
                 if not is_liver:
-                    print("  ❌ Not a liver scan — pipeline stopped")
+                    print("  [STOP] Not a liver scan -- pipeline stopped")
                     return JSONResponse(content={
                         "prediction": "Not a Liver Scan",
                         "result_class": "not-liver",
@@ -445,19 +445,19 @@ async def predict(file: UploadFile = File(...)):
                         "original_image": None,
                         "heatmap_error": None,
                     })
-                print(f"  ✅ Liver confirmed ({liver_ratio:.1f}%) → Stage 2")
+                print(f"  [OK] Liver confirmed ({liver_ratio:.1f}%) -> Stage 2")
                 liver_ratio_out = round(liver_ratio, 1)
             else:
                 liver_ratio_out = None
 
             # ── Stage 2: Tumor detection ──────────────────────────────
-            print(f"\n🔬 Stage 2 — Tumor analysis ({len(raw_slices)} slices)…")
+            print(f"\n[Stage 2] Tumor analysis ({len(raw_slices)} slices)...")
             all_probs, all_cams = [], []
             best_prob, best_idx = 0.0, 0
 
             for i, sl in enumerate(raw_slices):
                 if (i + 1) % 50 == 0:
-                    print(f"  ⏳ {i+1}/{len(raw_slices)}")
+                    print(f"  [...] {i+1}/{len(raw_slices)}")
                 tensor = preprocess_for_tumor(sl)
                 prob, cam, _ = _tumor_prob_and_gradcam(tensor)
                 all_probs.append(prob)
@@ -470,7 +470,7 @@ async def predict(file: UploadFile = File(...)):
             high = int(np.sum(arr > 0.70))
             ratio70 = high / len(all_probs) * 100
 
-            print(f"\n🔥 Grad-CAM for best slice (idx={best_idx}, prob={best_prob:.3f})…")
+            print(f"\n[Grad-CAM] Best slice idx={best_idx}, prob={best_prob:.3f}...")
             orig_b64, heat_b64 = _make_heatmap_images(raw_slices[best_idx], all_cams[best_idx])
 
             resp = {
@@ -498,12 +498,12 @@ async def predict(file: UploadFile = File(...)):
 
             # ── Stage 1: Liver check ──────────────────────────────────
             if LIVER_MODEL_ENABLED:
-                print(f"\n🔬 Stage 1 — Liver check (single image)…")
+                print(f"\n[Stage 1] Liver check (single image)...")
                 is_liver, liver_prob = stage1_image(img_array)
                 print(f"  Liver probability: {liver_prob:.1f}%")
 
                 if not is_liver:
-                    print("  ❌ Not a liver image — pipeline stopped")
+                    print("  [STOP] Not a liver image -- pipeline stopped")
                     return JSONResponse(content={
                         "prediction": "Not a Liver Scan",
                         "result_class": "not-liver",
@@ -518,13 +518,13 @@ async def predict(file: UploadFile = File(...)):
                         "original_image": None,
                         "heatmap_error": None,
                     })
-                print(f"  ✅ Liver image confirmed ({liver_prob:.1f}%) → Stage 2")
+                print(f"  [OK] Liver image confirmed ({liver_prob:.1f}%) -> Stage 2")
                 liver_prob_out = round(liver_prob, 1)
             else:
                 liver_prob_out = None
 
             # ── Stage 2: Tumor detection ──────────────────────────────
-            print(f"\n🔬 Stage 2 — Tumor analysis (single image)…")
+            print(f"\n[Stage 2] Tumor analysis (single image)...")
             tensor = preprocess_for_tumor(img_array)
             raw_prob, cam, _ = _tumor_prob_and_gradcam(tensor)
             is_tumor = raw_prob > 0.75
@@ -545,7 +545,7 @@ async def predict(file: UploadFile = File(...)):
             if liver_prob_out is not None:
                 resp["liver_probability"] = liver_prob_out
 
-        print(f"\n✅ {resp['prediction']} | confidence {resp['tumor_probability']}% "
+        print(f"\n[RESULT] {resp['prediction']} | confidence {resp['tumor_probability']}% "
               f"| heatmap: {'yes' if resp.get('heatmap_image') else 'no'}")
         print("=" * 60 + "\n")
         return JSONResponse(content=resp)
@@ -598,7 +598,7 @@ async def reset_evaluation():
 
 if __name__ == "__main__":
     import uvicorn
-    print(f"\n🚀  Stage 1 (Liver):  {'ENABLED' if LIVER_MODEL_ENABLED else 'DISABLED'}")
-    print("🚀  Stage 2 (Tumor + Grad-CAM): ENABLED")
+    print(f"\n  Stage 1 (Liver):  {'ENABLED' if LIVER_MODEL_ENABLED else 'DISABLED'}")
+    print("  Stage 2 (Tumor + Grad-CAM): ENABLED")
     print("URL: http://localhost:8000\n")
     uvicorn.run(app, host="0.0.0.0", port=8000)
