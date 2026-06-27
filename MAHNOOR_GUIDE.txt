@@ -75,27 +75,20 @@ Option B -- In Terminal inside VS Code:
 STEP 4 -- Install AI Models (one-time only)
 ------------------------------------------------------------
 
-The two AI model files (.pth files) are NOT on GitHub
-because they are too large. Hasham will give them to you
-via USB, WhatsApp, or Google Drive.
+The two AI model files are downloaded automatically from
+the internet. You do NOT need to get them from Hasham.
 
-The two files you need:
-  - liver_model.pth          (about 43 MB)
-  - lits_tumor_model_fixed.pth  (about 108 MB)
+  1. Make sure you have an internet connection
+  2. Double-click setup.bat
+  3. It will automatically download BOTH models:
+       - liver_model.pth          (~43 MB)
+       - lits_tumor_model_fixed.pth  (~108 MB)
+  4. Wait for it to finish (may take a few minutes)
 
-Once you have the files:
-
-  Method 1 -- Automatic (recommended):
-    1. Copy BOTH .pth files into this folder:
-          D:\Mahnoor Work\backend\
-       (same folder where setup.bat is)
-    2. Double-click setup.bat
-    3. It will find the files and install them automatically.
-
-  Method 2 -- Manual (if automatic fails):
-    1. Create this folder if it does not exist:
+  If the download fails (no internet / slow connection):
+    1. Ask Hasham for the files via USB or WhatsApp
+    2. Copy BOTH .pth files into:
           D:\Mahnoor Work\backend\backend\model\
-    2. Copy BOTH .pth files into that model\ folder.
 
 
 ------------------------------------------------------------

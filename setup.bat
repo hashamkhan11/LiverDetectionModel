@@ -14,6 +14,7 @@ set SCRIPT_DIR=%~dp0
 set MODEL_DIR=%~dp0backend\model
 set LIVER_MODEL=liver_model.pth
 set TUMOR_MODEL=lits_tumor_model_fixed.pth
+set LIVER_URL=https://huggingface.co/hashammubarak1/lits_tumor_model_fixed/resolve/main/liver_model.pth
 set TUMOR_URL=https://huggingface.co/hashammubarak1/lits_tumor_model_fixed/resolve/main/lits_tumor_model_fixed.pth
 
 :: ── Create model folder if missing ────────────────────────────
@@ -23,7 +24,7 @@ if not exist "%MODEL_DIR%" (
 )
 
 :: ════════════════════════════════════════════════════════════
-::  LIVER MODEL  (manual -- rename your file to liver_model.pth)
+::  LIVER MODEL  (auto-download from HuggingFace)
 :: ════════════════════════════════════════════════════════════
 echo  Checking %LIVER_MODEL%...
 
@@ -32,46 +33,29 @@ if exist "%MODEL_DIR%\%LIVER_MODEL%" (
     goto :check_tumor
 )
 
-:: Search common locations
-set FOUND_LIVER=
-
-if exist "%SCRIPT_DIR%%LIVER_MODEL%"                       set FOUND_LIVER=%SCRIPT_DIR%%LIVER_MODEL%
-if exist "%SCRIPT_DIR%models\%LIVER_MODEL%"               set FOUND_LIVER=%SCRIPT_DIR%models\%LIVER_MODEL%
-if exist "%USERPROFILE%\Desktop\%LIVER_MODEL%"            set FOUND_LIVER=%USERPROFILE%\Desktop\%LIVER_MODEL%
-if exist "%USERPROFILE%\Downloads\%LIVER_MODEL%"          set FOUND_LIVER=%USERPROFILE%\Downloads\%LIVER_MODEL%
-if exist "%USERPROFILE%\OneDrive\Desktop\%LIVER_MODEL%"   set FOUND_LIVER=%USERPROFILE%\OneDrive\Desktop\%LIVER_MODEL%
-
-if not "%FOUND_LIVER%"=="" goto :copy_liver
-
-:: Not found -- ask user
+echo  [DOWNLOAD] Downloading liver model from HuggingFace (~43 MB)...
+echo             This will take a minute depending on your internet.
 echo.
-echo  [!] %LIVER_MODEL% not found automatically.
+
+:: Try curl first (built into Windows 10/11)
+curl -L --progress-bar -o "%MODEL_DIR%\%LIVER_MODEL%" "%LIVER_URL%"
+if %errorlevel% equ 0 goto :liver_done
+
+:: Fallback to PowerShell
+echo  [INFO] Trying PowerShell download...
+powershell -Command "& { $ProgressPreference='Continue'; Invoke-WebRequest -Uri '%LIVER_URL%' -OutFile '%MODEL_DIR%\%LIVER_MODEL%' -UseBasicParsing }"
+if %errorlevel% equ 0 goto :liver_done
+
+:: Both failed
 echo.
-echo  Rename your 42 MB model file to:  liver_model.pth
-echo  Then place it next to setup.bat and press any key,
-echo  OR paste the full file path below and press Enter.
+echo  [ERROR] Download failed. Check your internet connection and try again.
 echo.
-set /p FOUND_LIVER=  Path (or press Enter after placing file):
+pause
+exit /b 1
 
-if "%FOUND_LIVER%"=="" set FOUND_LIVER=%SCRIPT_DIR%%LIVER_MODEL%
-
-if not exist "%FOUND_LIVER%" (
-    echo.
-    echo  [ERROR] File not found. Place liver_model.pth next to setup.bat and run again.
-    echo.
-    pause
-    exit /b 1
-)
-
-:copy_liver
-echo  [COPY] Installing %LIVER_MODEL%...
-copy /Y "%FOUND_LIVER%" "%MODEL_DIR%\%LIVER_MODEL%" >nul
-if %errorlevel% neq 0 (
-    echo  [ERROR] Failed to copy %LIVER_MODEL%.
-    pause
-    exit /b 1
-)
-echo  [OK] %LIVER_MODEL% installed.
+:liver_done
+echo.
+echo  [OK] %LIVER_MODEL% downloaded and installed.
 
 :: ════════════════════════════════════════════════════════════
 ::  TUMOR MODEL  (auto-download from HuggingFace)
