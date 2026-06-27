@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Upload, FileImage, X, Loader2, AlertCircle, Info } from 'lucide-react'
+import { Upload, FileImage, X, Loader2, AlertCircle, Info, CheckCircle2 } from 'lucide-react'
 import { predictScan } from '@/lib/api'
 import type { PredictionResult } from '@/lib/types'
 import { saveScan } from '@/lib/firestore'
@@ -19,7 +19,7 @@ export default function ScanPage() {
   const router = useRouter()
   const { user, loading: authLoading } = useRequireAuth()
   const inputRef = useRef<HTMLInputElement>(null)
-  const [file, setFile]       = useState<File | null>(null)
+  const [file, setFile]         = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
@@ -46,25 +46,23 @@ export default function ScanPage() {
     try {
       const result = await predictScan(file)
 
-      // Store full result (with heatmap base64) in sessionStorage for results page
       sessionStorage.setItem('liver_result',   JSON.stringify(result))
       sessionStorage.setItem('liver_filename', file.name)
 
-      // Strip heatmap images before saving to Firestore (too large for Firestore docs)
       const firestoreResult: PredictionResult = {
-        prediction:           result.prediction,
-        result_class:         result.result_class,
-        tumor_probability:    result.tumor_probability,
+        prediction:            result.prediction,
+        result_class:          result.result_class,
+        tumor_probability:     result.tumor_probability,
         non_tumor_probability: result.non_tumor_probability,
-        slices_analyzed:      result.slices_analyzed,
-        max_probability:      result.max_probability,
-        mean_probability:     result.mean_probability,
-        affected_slices:      result.affected_slices,
-        affected_ratio:       result.affected_ratio,
-        decision_reason:      result.decision_reason,
-        heatmap_error:        result.heatmap_error,
-        liver_probability:    result.liver_probability,
-        liver_slices_checked: result.liver_slices_checked,
+        slices_analyzed:       result.slices_analyzed,
+        max_probability:       result.max_probability,
+        mean_probability:      result.mean_probability,
+        affected_slices:       result.affected_slices,
+        affected_ratio:        result.affected_ratio,
+        decision_reason:       result.decision_reason,
+        heatmap_error:         result.heatmap_error,
+        liver_probability:     result.liver_probability,
+        liver_slices_checked:  result.liver_slices_checked,
       }
 
       const scanId = await saveScan(user.uid, file.name, firestoreResult)
@@ -89,10 +87,12 @@ export default function ScanPage() {
   return (
     <div className="max-w-2xl mx-auto w-full px-4 py-12">
 
+      {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-800 mb-1">Upload CT Scan</h1>
-        <p className="text-slate-500 text-sm">
-          Upload a NIfTI volume or CT image to run liver tumor detection.
+        <p className="text-blue-600 text-xs font-bold uppercase tracking-widest mb-2">New Analysis</p>
+        <h1 className="text-3xl font-bold text-slate-900">Upload CT Scan</h1>
+        <p className="text-slate-500 text-sm mt-2">
+          Upload a NIfTI volume or CT image to run the two-stage liver tumor detection pipeline.
         </p>
       </div>
 
@@ -102,11 +102,12 @@ export default function ScanPage() {
         onDragOver={e => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
-        className={`relative border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer ${
-          dragging ? 'border-blue-500 bg-blue-50'
-          : file    ? 'border-blue-300 bg-blue-50/40'
-          :           'border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/20'
-        } ${loading ? 'pointer-events-none opacity-60' : ''}`}
+        className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer ${
+          loading    ? 'pointer-events-none opacity-60 border-slate-200 bg-white'
+          : dragging  ? 'border-blue-500 bg-blue-50 scale-[1.01]'
+          : file      ? 'border-blue-300 bg-blue-50/60'
+          :             'border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/30'
+        }`}
       >
         <input ref={inputRef} type="file" className="hidden"
           accept=".nii,.nii.gz,.jpg,.jpeg,.png"
@@ -114,66 +115,77 @@ export default function ScanPage() {
 
         {file ? (
           <div className="animate-fade-up">
-            <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <FileImage className="w-7 h-7 text-blue-600" />
+            <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
+              <FileImage className="w-8 h-8 text-blue-600" />
             </div>
-            <p className="font-semibold text-slate-800">{file.name}</p>
-            <p className="text-sm text-slate-500 mt-1">
-              {isNifti ? 'NIfTI Volume' : 'CT Image'} &nbsp;·&nbsp; {sizeMB} MB
+            <div className="inline-flex items-center gap-2 bg-blue-600/10 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full mb-3">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              File ready
+            </div>
+            <p className="font-semibold text-slate-800 text-lg mb-1 truncate max-w-sm mx-auto">{file.name}</p>
+            <p className="text-sm text-slate-400">
+              {isNifti ? 'NIfTI Volume — full volumetric analysis' : 'CT Image — single slice analysis'}
+              &nbsp;·&nbsp; {sizeMB} MB
             </p>
-            <button onClick={e => { e.stopPropagation(); setFile(null) }}
-              className="mt-3 inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-500 transition-colors">
-              <X className="w-3 h-3" /> Remove file
+            <button
+              onClick={e => { e.stopPropagation(); setFile(null) }}
+              className="mt-4 inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-rose-500 transition-colors font-medium">
+              <X className="w-3.5 h-3.5" /> Remove file
             </button>
           </div>
         ) : (
           <div>
-            <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <Upload className="w-7 h-7 text-slate-400" />
+            <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
+              <Upload className="w-8 h-8 text-slate-400" />
             </div>
-            <p className="font-semibold text-slate-700">
+            <p className="font-semibold text-slate-700 text-lg mb-1">
               {dragging ? 'Drop your file here' : 'Click or drag & drop'}
             </p>
-            <p className="text-sm text-slate-400 mt-1">NIfTI or CT image</p>
+            <p className="text-sm text-slate-400">NIfTI volumes or CT images accepted</p>
           </div>
         )}
       </div>
 
-      {/* Formats */}
-      <div className="mt-3 flex items-start gap-2 text-xs text-slate-400 px-1">
-        <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-        <span>
-          Supported: <strong>.nii</strong>, <strong>.nii.gz</strong> (full volume — recommended),{' '}
-          <strong>.jpg</strong>, <strong>.jpeg</strong>, <strong>.png</strong> (single slice)
-        </span>
+      {/* Supported formats */}
+      <div className="mt-3 flex flex-wrap gap-2 px-1">
+        {['.nii', '.nii.gz', '.jpg', '.jpeg', '.png'].map(ext => (
+          <span key={ext} className="text-xs font-mono bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md">{ext}</span>
+        ))}
+        <span className="text-xs text-slate-400 self-center ml-1">— NIfTI recommended for full analysis</span>
       </div>
 
       {error && (
-        <div className="mt-4 flex items-start gap-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm animate-fade-up">
+        <div className="mt-4 flex items-start gap-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl px-4 py-3 text-sm animate-fade-up">
           <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
           {error}
         </div>
       )}
 
-      {isNifti && (
+      {isNifti && !error && (
         <div className="mt-4 flex items-start gap-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl px-4 py-3 text-sm animate-fade-up">
           <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
-          NIfTI volume detected — all slices will be analyzed for maximum accuracy.
+          NIfTI volume detected — all slices will be analysed through both pipeline stages.
         </div>
       )}
 
-      <button onClick={analyze} disabled={!file || loading}
-        className="mt-6 w-full flex items-center justify-center gap-2 bg-blue-700 hover:bg-blue-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition-colors">
-        {loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Analyzing{isNifti ? ' all slices' : ''}…</>
-                 : <><Upload className="w-5 h-5" /> Analyze Scan</>}
+      <button
+        onClick={analyze}
+        disabled={!file || loading}
+        className="mt-6 w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl transition-colors text-base shadow-sm">
+        {loading
+          ? <><Loader2 className="w-5 h-5 animate-spin" /> Analysing{isNifti ? ' all slices' : ''}…</>
+          : <><Upload className="w-5 h-5" /> Analyse Scan</>}
       </button>
 
       {loading && (
-        <p className="text-center text-xs text-slate-400 mt-3 animate-pulse">
-          {isNifti
-            ? 'Stage 1: checking for liver tissue, then Stage 2: tumor analysis… this may take 1–2 minutes.'
-            : 'Running inference on your image…'}
-        </p>
+        <div className="mt-4 text-center space-y-1.5">
+          <p className="text-sm text-slate-500 font-medium">
+            {isNifti ? 'Running two-stage pipeline across all slices…' : 'Running inference on your image…'}
+          </p>
+          <p className="text-xs text-slate-400">
+            {isNifti ? 'Stage 1: liver verification → Stage 2: tumor detection. This may take 1–2 minutes.' : 'This should only take a few seconds.'}
+          </p>
+        </div>
       )}
 
     </div>
