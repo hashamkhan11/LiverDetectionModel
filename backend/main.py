@@ -336,17 +336,18 @@ def _tumor_prob_and_gradcam(tensor: torch.Tensor) -> tuple:
 
 
 def advanced_tumor_detection(probs: list) -> tuple:
-    """70% slice threshold + 11% affected-ratio cutoff."""
+    """Any single slice > 0.50 = tumor (matches notebook validated logic)."""
     arr = np.array(probs)
-    above = int(np.sum(arr > 0.70))
+    above = int(np.sum(arr > 0.50))
     ratio = above / len(arr) * 100
-    print(f"  Tumor stats — max:{arr.max():.3f} mean:{arr.mean():.3f} "
-          f"slices>70%:{above}/{len(arr)} ({ratio:.1f}%)")
-    if ratio <= 11:
-        return False, min(0.30, ratio / 100 * 0.8), \
-               f"HEALTHY: Affected ratio = {ratio:.1f}% (≤11% threshold)"
-    return True, min(0.95, 0.50 + ratio / 100 * 0.5), \
-           f"TUMOR: Affected ratio = {ratio:.1f}% (>11% threshold)"
+    max_prob = float(arr.max())
+    print(f"  Tumor stats — max:{max_prob:.3f} mean:{arr.mean():.3f} "
+          f"slices>50%:{above}/{len(arr)} ({ratio:.1f}%)")
+    if above == 0:
+        return False, min(0.45, max_prob), \
+               f"HEALTHY: No slice exceeded 50% tumor probability (max={max_prob:.3f})"
+    return True, min(0.95, max_prob), \
+           f"TUMOR: {above} slice(s) exceeded 50% tumor probability (max={max_prob:.3f})"
 
 
 def _make_heatmap_images(slice_2d: np.ndarray, cam: np.ndarray) -> tuple:
@@ -395,7 +396,7 @@ async def health():
         "nifti_support": NIBABEL_AVAILABLE,
         "liver_model_enabled": LIVER_MODEL_ENABLED,
         "pipeline": "two-stage (liver → tumor)" if LIVER_MODEL_ENABLED else "single-stage (tumor only)",
-        "detection_logic": "70% slice threshold + 11% affected ratio",
+        "detection_logic": "50% slice threshold + any-positive-slice rule",
     }
 
 
@@ -527,7 +528,7 @@ async def predict(file: UploadFile = File(...)):
             print(f"\n[Stage 2] Tumor analysis (single image)...")
             tensor = preprocess_for_tumor(img_array)
             raw_prob, cam, _ = _tumor_prob_and_gradcam(tensor)
-            is_tumor = raw_prob > 0.75
+            is_tumor = raw_prob > 0.50
             conf     = raw_prob if is_tumor else 1 - raw_prob
 
             orig_b64, heat_b64 = _make_heatmap_images(img_array, cam)
