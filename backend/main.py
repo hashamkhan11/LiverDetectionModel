@@ -242,11 +242,19 @@ _tumor_transform = transforms.Compose([
 ])
 
 def preprocess_for_tumor(slice_2d: np.ndarray) -> torch.Tensor:
-    """Min-max → uint8 → PIL RGB → ImageNet-normalised tensor [1,3,224,224]."""
+    """Liver-windowed uint8 → PIL RGB → ImageNet-normalised tensor [1,3,224,224].
+    Applies liver CT window for NIfTI HU data; min-max for already-normalised uploads."""
     img = slice_2d.astype(np.float32)
-    lo, hi = img.min(), img.max()
-    img = ((img - lo) / (hi - lo) * 255).astype(np.uint8) if hi > lo else np.zeros_like(img, dtype=np.uint8)
-    return _tumor_transform(Image.fromarray(img).convert("RGB")).unsqueeze(0)
+    if img.min() < -10 or img.max() > 300:
+        WL, WW = 50.0, 400.0
+        lo, hi = WL - WW / 2, WL + WW / 2   # -150 to 250
+        img = np.clip(img, lo, hi)
+        img_u8 = ((img - lo) / (hi - lo) * 255).astype(np.uint8)
+    else:
+        lo, hi = img.min(), img.max()
+        img_u8 = ((img - lo) / (hi - lo) * 255).astype(np.uint8) if hi > lo \
+                 else np.zeros_like(img, dtype=np.uint8)
+    return _tumor_transform(Image.fromarray(img_u8).convert("RGB")).unsqueeze(0)
 
 
 # ── Liver model preprocessing (1-channel grayscale, CLAHE) ────────────
@@ -256,12 +264,22 @@ def preprocess_for_tumor(slice_2d: np.ndarray) -> torch.Tensor:
 def preprocess_for_liver(slice_2d: np.ndarray) -> torch.Tensor:
     """
     Replicates preprocess_image() from LiTS_Model_Package/utils/preprocess.py.
-    Input: 2D numpy array (any float range from NIfTI, or uint8 from image).
+    For NIfTI HU data: applies liver CT window (center=50, width=400, range [-150,250])
+    before converting to uint8, matching how the training PNGs were created.
+    For already-normalised image uploads (uint8 [0,255]): min-max stretch directly.
     Output: tensor [1, 1, 224, 224], float32, range [0,1].
     """
     img = slice_2d.astype(np.float32)
-    lo, hi = img.min(), img.max()
-    img_u8 = ((img - lo) / (hi - lo) * 255).astype(np.uint8) if hi > lo else np.zeros_like(img, dtype=np.uint8)
+    if img.min() < -10 or img.max() > 300:
+        # Raw HU values from NIfTI — apply standard liver CT window
+        WL, WW = 50.0, 400.0          # center=50 HU, width=400 HU
+        lo, hi = WL - WW / 2, WL + WW / 2   # -150 to 250
+        img = np.clip(img, lo, hi)
+        img_u8 = ((img - lo) / (hi - lo) * 255).astype(np.uint8)
+    else:
+        lo, hi = img.min(), img.max()
+        img_u8 = ((img - lo) / (hi - lo) * 255).astype(np.uint8) if hi > lo \
+                 else np.zeros_like(img, dtype=np.uint8)
     img_u8 = cv2.resize(img_u8, (224, 224), interpolation=cv2.INTER_AREA)
     clahe  = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     img_u8 = clahe.apply(img_u8)
@@ -285,10 +303,24 @@ def extract_slices_from_nifti(nifti_bytes: bytes):
 
 
 # ============================================================
-# STAGE 1 — LIVER INFERENCE
+# STAGE 1 — LIVER DETECTION
 # ============================================================
-def _liver_prob(slice_2d: np.ndarray) -> float:
-    """Probability that this slice is liver tissue (class 1)."""
+
+def _liver_score_hu(slice_2d: np.ndarray) -> float:
+    """
+    HU-based liver presence score for NIfTI slices.
+    Liver tissue occupies 30-180 HU. Returns fraction of pixels
+    in that range as a proxy for how much liver is in this slice.
+    A score >0.08 (8% of pixels) reliably indicates a liver slice.
+    """
+    arr = slice_2d.astype(np.float32)
+    liver_pixels = np.sum((arr >= 30) & (arr <= 180))
+    total_pixels = arr.size
+    return liver_pixels / total_pixels
+
+
+def _liver_prob_model(slice_2d: np.ndarray) -> float:
+    """ML model-based liver probability (for 2D image uploads, already uint8)."""
     t = preprocess_for_liver(slice_2d).to(device)
     with torch.no_grad():
         return torch.softmax(liver_model(t), dim=1)[0, 1].item()
@@ -296,11 +328,12 @@ def _liver_prob(slice_2d: np.ndarray) -> float:
 
 def stage1_volume(raw_slices: list) -> tuple:
     """
-    Check whether the volume is a liver CT.
+    HU-based liver check for NIfTI volumes.
+    A slice is liver if >8% of its pixels fall in the 30-180 HU liver range.
+    Volume passes if >50% of slices are liver slices.
     Returns: (is_liver, liver_ratio_pct, liver_count, total)
-    Threshold: >50% of slices classified as liver.
     """
-    liver_count = sum(1 for s in raw_slices if _liver_prob(s) > 0.5)
+    liver_count = sum(1 for s in raw_slices if _liver_score_hu(s) > 0.08)
     total = len(raw_slices)
     ratio = liver_count / total * 100 if total else 0
     return ratio > 50.0, ratio, liver_count, total
@@ -308,11 +341,16 @@ def stage1_volume(raw_slices: list) -> tuple:
 
 def stage1_image(slice_2d: np.ndarray) -> tuple:
     """
-    Check whether a single 2D image is liver.
-    Returns: (is_liver, liver_prob_pct)
+    HU-based liver check for 2D image uploads (PNG/JPG, uint8 [0,255]).
+    Since images are already normalised, we use pixel intensity range [30,180]
+    mapped proportionally: liver pixels ≈ [30/255, 180/255] of full range.
+    Returns: (is_liver, score_pct)
     """
-    prob = _liver_prob(slice_2d)
-    return prob > 0.5, prob * 100
+    arr = slice_2d.astype(np.float32)
+    # Map uint8 [0,255] liver range: 30 HU → ~90/255, 180 HU → ~160/255
+    liver_pixels = np.sum((arr >= 80) & (arr <= 180))
+    score = liver_pixels / arr.size
+    return score > 0.08, round(score * 100, 1)
 
 
 # ============================================================
@@ -422,34 +460,31 @@ async def predict(file: UploadFile = File(...)):
 
             raw_slices, volume_data = extract_slices_from_nifti(contents)
 
-            # ── Stage 1: Liver check ──────────────────────────────────
-            if LIVER_MODEL_ENABLED:
-                print(f"\n[Stage 1] Liver check ({len(raw_slices)} slices)...")
-                is_liver, liver_ratio, liver_count, total = stage1_volume(raw_slices)
-                print(f"  Liver slices: {liver_count}/{total} ({liver_ratio:.1f}%)")
+            # ── Stage 1: HU-based liver check ────────────────────────────
+            print(f"\n[Stage 1] HU-based liver check ({len(raw_slices)} slices)...")
+            is_liver, liver_ratio, liver_count, total = stage1_volume(raw_slices)
+            print(f"  Liver slices: {liver_count}/{total} ({liver_ratio:.1f}%)")
 
-                if not is_liver:
-                    print("  [STOP] Not a liver scan -- pipeline stopped")
-                    return JSONResponse(content={
-                        "prediction": "Not a Liver Scan",
-                        "result_class": "not-liver",
-                        "tumor_probability": 0,
-                        "non_tumor_probability": 0,
-                        "liver_probability": round(liver_ratio, 1),
-                        "liver_slices_checked": total,
-                        "slices_analyzed": total,
-                        "decision_reason": (
-                            f"Only {liver_ratio:.1f}% of slices classified as liver "
-                            f"({liver_count}/{total}). Threshold: >50%."
-                        ),
-                        "heatmap_image": None,
-                        "original_image": None,
-                        "heatmap_error": None,
-                    })
-                print(f"  [OK] Liver confirmed ({liver_ratio:.1f}%) -> Stage 2")
-                liver_ratio_out = round(liver_ratio, 1)
-            else:
-                liver_ratio_out = None
+            if not is_liver:
+                print("  [STOP] Not a liver scan -- pipeline stopped")
+                return JSONResponse(content={
+                    "prediction": "Not a Liver Scan",
+                    "result_class": "not-liver",
+                    "tumor_probability": 0,
+                    "non_tumor_probability": 0,
+                    "liver_probability": round(liver_ratio, 1),
+                    "liver_slices_checked": total,
+                    "slices_analyzed": total,
+                    "decision_reason": (
+                        f"Only {liver_ratio:.1f}% of slices contain liver-range HU values "
+                        f"({liver_count}/{total}). Threshold: >50%."
+                    ),
+                    "heatmap_image": None,
+                    "original_image": None,
+                    "heatmap_error": None,
+                })
+            print(f"  [OK] Liver confirmed ({liver_ratio:.1f}%) -> Stage 2")
+            liver_ratio_out = round(liver_ratio, 1)
 
             # ── Stage 2: Tumor detection ──────────────────────────────
             print(f"\n[Stage 2] Tumor analysis ({len(raw_slices)} slices)...")
@@ -497,32 +532,13 @@ async def predict(file: UploadFile = File(...)):
             image     = Image.open(io.BytesIO(contents))
             img_array = np.array(image.convert("L"))   # grayscale numpy
 
-            # ── Stage 1: Liver check ──────────────────────────────────
-            if LIVER_MODEL_ENABLED:
-                print(f"\n[Stage 1] Liver check (single image)...")
-                is_liver, liver_prob = stage1_image(img_array)
-                print(f"  Liver probability: {liver_prob:.1f}%")
-
-                if not is_liver:
-                    print("  [STOP] Not a liver image -- pipeline stopped")
-                    return JSONResponse(content={
-                        "prediction": "Not a Liver Scan",
-                        "result_class": "not-liver",
-                        "tumor_probability": 0,
-                        "non_tumor_probability": 0,
-                        "liver_probability": round(liver_prob, 1),
-                        "decision_reason": (
-                            f"Image classified as non-liver "
-                            f"(liver probability: {liver_prob:.1f}%). Threshold: >50%."
-                        ),
-                        "heatmap_image": None,
-                        "original_image": None,
-                        "heatmap_error": None,
-                    })
-                print(f"  [OK] Liver image confirmed ({liver_prob:.1f}%) -> Stage 2")
-                liver_prob_out = round(liver_prob, 1)
-            else:
-                liver_prob_out = None
+            # ── Stage 1: Skipped for PNG/JPG ─────────────────────────
+            # HU-based liver detection requires raw Hounsfield Unit data,
+            # which is only available in NIfTI/DICOM formats. PNG/JPG images
+            # have already been through display processing and contain no
+            # reliable HU information, so the liver gate cannot be applied.
+            liver_prob_out = None
+            print(f"\n[Stage 1] Skipped for 2D image (no HU data) -> Stage 2")
 
             # ── Stage 2: Tumor detection ──────────────────────────────
             print(f"\n[Stage 2] Tumor analysis (single image)...")
