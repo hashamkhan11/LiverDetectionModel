@@ -66,7 +66,7 @@ echo  Checking %TUMOR_MODEL%...
 
 if exist "%MODEL_DIR%\%TUMOR_MODEL%" (
     echo  [SKIP] %TUMOR_MODEL% already in place.
-    goto :check_env
+    goto :check_backend_env
 )
 
 echo  [DOWNLOAD] Downloading tumor model from HuggingFace (~108 MB)...
