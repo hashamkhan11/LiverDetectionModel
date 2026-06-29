@@ -95,7 +95,25 @@ echo.
 echo  [OK] %TUMOR_MODEL% downloaded and installed.
 
 :: ════════════════════════════════════════════════════════════
-::  .env.local
+::  backend .env  (vision config)
+:: ════════════════════════════════════════════════════════════
+:check_backend_env
+echo.
+echo  Checking backend\.env...
+
+if exist "%SCRIPT_DIR%backend\.env" (
+    echo  [SKIP] backend\.env already exists.
+    goto :check_env
+)
+
+(
+echo VISION_API_KEY=AQ.Ab8RN6LUf4Ig0Ozr-UkdVwW4bqwHRuRHkLSuhZ-sTFz9RZIRNg
+echo VISION_API_ENDPOINT=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+) > "%SCRIPT_DIR%backend\.env"
+echo  [OK] backend\.env created.
+
+:: ════════════════════════════════════════════════════════════
+::  .env.local  (Firebase + API URL)
 :: ════════════════════════════════════════════════════════════
 :check_env
 echo.
