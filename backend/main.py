@@ -14,7 +14,16 @@ import hashlib
 import base64
 import cv2
 import traceback
+import requests
 warnings.filterwarnings("ignore")
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+except ImportError:
+    pass
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 try:
     import nibabel as nib
@@ -303,6 +312,81 @@ def extract_slices_from_nifti(nifti_bytes: bytes):
 
 
 # ============================================================
+# GEMINI VISION — CT scan check for PNG/JPG uploads
+# ============================================================
+
+def gemini_is_liver_ct(image_bytes: bytes, mime_type: str = "image/jpeg") -> tuple:
+    """
+    Ask Gemini Vision whether the uploaded image is a liver/abdomen CT scan.
+    Returns: (is_liver_ct: bool, reason: str)
+    Falls back to True (allow through) if API is unavailable or quota exceeded.
+    """
+    if not GEMINI_API_KEY:
+        return True, "Gemini API key not configured -- skipping visual check"
+
+    try:
+        img_b64 = base64.b64encode(image_bytes).decode()
+        payload = {
+            "contents": [{
+                "parts": [
+                    {
+                        "inline_data": {
+                            "mime_type": mime_type,
+                            "data": img_b64,
+                        }
+                    },
+                    {
+                        "text": (
+                            "Look at this image carefully. "
+                            "Is it a medical CT scan (computed tomography) showing the "
+                            "liver, abdomen, or torso region? "
+                            "Answer with ONLY one word: yes or no."
+                        )
+                    }
+                ]
+            }],
+            "generationConfig": {"maxOutputTokens": 5, "temperature": 0.0},
+        }
+        resp = requests.post(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+            headers={
+                "Content-Type": "application/json",
+                "X-goog-api-key": GEMINI_API_KEY,
+            },
+            json=payload,
+            timeout=15,
+        )
+        data = resp.json()
+        if resp.status_code == 429:
+            print(f"  [Gemini] Quota exceeded -- allowing image through")
+            return True, "Gemini quota exceeded -- visual check skipped"
+        if resp.status_code != 200:
+            print(f"  [Gemini] API error {resp.status_code} -- allowing image through")
+            return True, f"Gemini API error {resp.status_code} -- visual check skipped"
+
+        answer = (
+            data.get("candidates", [{}])[0]
+                .get("content", {})
+                .get("parts", [{}])[0]
+                .get("text", "")
+                .strip()
+                .lower()
+        )
+        print(f"  [Gemini] Response: '{answer}'")
+        is_ct = answer.startswith("yes")
+        reason = "Gemini Vision confirmed liver/abdomen CT scan" if is_ct \
+                 else f"Gemini Vision: not a liver CT scan (got: '{answer}')"
+        return is_ct, reason
+
+    except requests.exceptions.Timeout:
+        print("  [Gemini] Request timed out -- allowing image through")
+        return True, "Gemini request timed out -- visual check skipped"
+    except Exception as e:
+        print(f"  [Gemini] Unexpected error: {e} -- allowing image through")
+        return True, f"Gemini error: {e} -- visual check skipped"
+
+
+# ============================================================
 # STAGE 1 — LIVER DETECTION
 # ============================================================
 
@@ -532,13 +616,27 @@ async def predict(file: UploadFile = File(...)):
             image     = Image.open(io.BytesIO(contents))
             img_array = np.array(image.convert("L"))   # grayscale numpy
 
-            # ── Stage 1: Skipped for PNG/JPG ─────────────────────────
-            # HU-based liver detection requires raw Hounsfield Unit data,
-            # which is only available in NIfTI/DICOM formats. PNG/JPG images
-            # have already been through display processing and contain no
-            # reliable HU information, so the liver gate cannot be applied.
+            # ── Stage 1: Gemini Vision liver/CT check ────────────────
+            print(f"\n[Stage 1] Gemini Vision check (is this a liver CT scan?)...")
+            mime = "image/png" if fname.endswith(".png") else "image/jpeg"
+            is_liver_ct, gemini_reason = gemini_is_liver_ct(contents, mime)
+            print(f"  Result: {gemini_reason}")
             liver_prob_out = None
-            print(f"\n[Stage 1] Skipped for 2D image (no HU data) -> Stage 2")
+
+            if not is_liver_ct:
+                print("  [STOP] Gemini says not a liver CT -- pipeline stopped")
+                return JSONResponse(content={
+                    "prediction": "Not a Liver Scan",
+                    "result_class": "not-liver",
+                    "tumor_probability": 0,
+                    "non_tumor_probability": 0,
+                    "liver_probability": 0,
+                    "slices_analyzed": 1,
+                    "decision_reason": gemini_reason,
+                    "heatmap_image": None,
+                    "original_image": None,
+                    "heatmap_error": None,
+                })
 
             # ── Stage 2: Tumor detection ──────────────────────────────
             print(f"\n[Stage 2] Tumor analysis (single image)...")
