@@ -23,7 +23,8 @@ try:
 except ImportError:
     pass
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+_VISION_KEY      = os.environ.get("VISION_API_KEY", "")
+_VISION_ENDPOINT = os.environ.get("VISION_API_ENDPOINT", "")
 
 try:
     import nibabel as nib
@@ -312,17 +313,17 @@ def extract_slices_from_nifti(nifti_bytes: bytes):
 
 
 # ============================================================
-# GEMINI VISION — CT scan check for PNG/JPG uploads
+# VISUAL VALIDATION — CT scan check for PNG/JPG uploads
 # ============================================================
 
-def gemini_is_liver_ct(image_bytes: bytes, mime_type: str = "image/jpeg") -> tuple:
+def _verify_ct_scan(image_bytes: bytes, mime_type: str = "image/jpeg") -> tuple:
     """
-    Ask Gemini Vision whether the uploaded image is a liver/abdomen CT scan.
-    Returns: (is_liver_ct: bool, reason: str)
-    Falls back to True (allow through) if API is unavailable or quota exceeded.
+    Visual validation: checks whether the uploaded image is a liver/abdomen CT scan.
+    Returns: (is_ct: bool, reason: str)
+    Falls back to True (allow through) if the service is unavailable.
     """
-    if not GEMINI_API_KEY:
-        return True, "Gemini API key not configured -- skipping visual check"
+    if not _VISION_KEY or not _VISION_ENDPOINT:
+        return True, "Visual validation not configured -- skipping"
 
     try:
         img_b64 = base64.b64encode(image_bytes).decode()
@@ -348,21 +349,21 @@ def gemini_is_liver_ct(image_bytes: bytes, mime_type: str = "image/jpeg") -> tup
             "generationConfig": {"maxOutputTokens": 5, "temperature": 0.0},
         }
         resp = requests.post(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+            _VISION_ENDPOINT,
             headers={
                 "Content-Type": "application/json",
-                "X-goog-api-key": GEMINI_API_KEY,
+                "X-goog-api-key": _VISION_KEY,
             },
             json=payload,
             timeout=15,
         )
         data = resp.json()
         if resp.status_code == 429:
-            print(f"  [Gemini] Quota exceeded -- allowing image through")
-            return True, "Gemini quota exceeded -- visual check skipped"
+            print(f"  [Vision] Service busy -- allowing image through")
+            return True, "Visual check unavailable -- proceeding to analysis"
         if resp.status_code != 200:
-            print(f"  [Gemini] API error {resp.status_code} -- allowing image through")
-            return True, f"Gemini API error {resp.status_code} -- visual check skipped"
+            print(f"  [Vision] Service error {resp.status_code} -- allowing image through")
+            return True, f"Visual check error -- proceeding to analysis"
 
         answer = (
             data.get("candidates", [{}])[0]
@@ -372,18 +373,18 @@ def gemini_is_liver_ct(image_bytes: bytes, mime_type: str = "image/jpeg") -> tup
                 .strip()
                 .lower()
         )
-        print(f"  [Gemini] Response: '{answer}'")
+        print(f"  [Vision] CT scan check: '{answer}'")
         is_ct = answer.startswith("yes")
-        reason = "Gemini Vision confirmed liver/abdomen CT scan" if is_ct \
-                 else f"Gemini Vision: not a liver CT scan (got: '{answer}')"
+        reason = "Visual check confirmed liver/abdomen CT scan" if is_ct \
+                 else "Image does not appear to be a liver CT scan"
         return is_ct, reason
 
     except requests.exceptions.Timeout:
-        print("  [Gemini] Request timed out -- allowing image through")
-        return True, "Gemini request timed out -- visual check skipped"
+        print(f"  [Vision] Timeout -- allowing image through")
+        return True, "Visual check timed out -- proceeding to analysis"
     except Exception as e:
-        print(f"  [Gemini] Unexpected error: {e} -- allowing image through")
-        return True, f"Gemini error: {e} -- visual check skipped"
+        print(f"  [Vision] Error -- allowing image through")
+        return True, "Visual check unavailable -- proceeding to analysis"
 
 
 # ============================================================
@@ -616,15 +617,15 @@ async def predict(file: UploadFile = File(...)):
             image     = Image.open(io.BytesIO(contents))
             img_array = np.array(image.convert("L"))   # grayscale numpy
 
-            # ── Stage 1: Gemini Vision liver/CT check ────────────────
-            print(f"\n[Stage 1] Gemini Vision check (is this a liver CT scan?)...")
+            # ── Stage 1: Visual CT scan validation ───────────────────
+            print(f"\n[Stage 1] Visual validation (checking image type)...")
             mime = "image/png" if fname.endswith(".png") else "image/jpeg"
-            is_liver_ct, gemini_reason = gemini_is_liver_ct(contents, mime)
-            print(f"  Result: {gemini_reason}")
+            is_ct, vision_reason = _verify_ct_scan(contents, mime)
+            print(f"  Result: {vision_reason}")
             liver_prob_out = None
 
-            if not is_liver_ct:
-                print("  [STOP] Gemini says not a liver CT -- pipeline stopped")
+            if not is_ct:
+                print("  [STOP] Not a liver CT -- pipeline stopped")
                 return JSONResponse(content={
                     "prediction": "Not a Liver Scan",
                     "result_class": "not-liver",
@@ -632,7 +633,7 @@ async def predict(file: UploadFile = File(...)):
                     "non_tumor_probability": 0,
                     "liver_probability": 0,
                     "slices_analyzed": 1,
-                    "decision_reason": gemini_reason,
+                    "decision_reason": vision_reason,
                     "heatmap_image": None,
                     "original_image": None,
                     "heatmap_error": None,
