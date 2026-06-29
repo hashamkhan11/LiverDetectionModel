@@ -37,13 +37,13 @@ echo  [DOWNLOAD] Downloading liver model from HuggingFace (~43 MB)...
 echo             This will take a minute depending on your internet.
 echo.
 
-:: Try curl first (built into Windows 10/11)
-curl -L --progress-bar -o "%MODEL_DIR%\%LIVER_MODEL%" "%LIVER_URL%"
+:: Try curl with retry + resume
+curl -L --retry 5 --retry-delay 3 -C - --progress-bar -o "%MODEL_DIR%\%LIVER_MODEL%" "%LIVER_URL%"
 if %errorlevel% equ 0 goto :liver_done
 
-:: Fallback to PowerShell
+:: Fallback to PowerShell with retry
 echo  [INFO] Trying PowerShell download...
-powershell -Command "& { $ProgressPreference='Continue'; Invoke-WebRequest -Uri '%LIVER_URL%' -OutFile '%MODEL_DIR%\%LIVER_MODEL%' -UseBasicParsing }"
+powershell -Command "& { $ProgressPreference='SilentlyContinue'; $attempts=0; do { $attempts++; try { Invoke-WebRequest -Uri '%LIVER_URL%' -OutFile '%MODEL_DIR%\%LIVER_MODEL%' -UseBasicParsing; break } catch { Write-Host \"  Retry $attempts...\"; Start-Sleep 3 } } while ($attempts -lt 5) }"
 if %errorlevel% equ 0 goto :liver_done
 
 :: Both failed
@@ -73,13 +73,13 @@ echo  [DOWNLOAD] Downloading tumor model from HuggingFace (~108 MB)...
 echo             This will take a few minutes depending on your internet.
 echo.
 
-:: Try curl first (built into Windows 10/11)
-curl -L --progress-bar -o "%MODEL_DIR%\%TUMOR_MODEL%" "%TUMOR_URL%"
+:: Try curl with retry + resume
+curl -L --retry 5 --retry-delay 3 -C - --progress-bar -o "%MODEL_DIR%\%TUMOR_MODEL%" "%TUMOR_URL%"
 if %errorlevel% equ 0 goto :tumor_done
 
-:: Fallback to PowerShell
+:: Fallback to PowerShell with retry
 echo  [INFO] Trying PowerShell download...
-powershell -Command "& { $ProgressPreference='Continue'; Invoke-WebRequest -Uri '%TUMOR_URL%' -OutFile '%MODEL_DIR%\%TUMOR_MODEL%' -UseBasicParsing }"
+powershell -Command "& { $ProgressPreference='SilentlyContinue'; $attempts=0; do { $attempts++; try { Invoke-WebRequest -Uri '%TUMOR_URL%' -OutFile '%MODEL_DIR%\%TUMOR_MODEL%' -UseBasicParsing; break } catch { Write-Host \"  Retry $attempts...\"; Start-Sleep 3 } } while ($attempts -lt 5) }"
 if %errorlevel% equ 0 goto :tumor_done
 
 :: Both failed
