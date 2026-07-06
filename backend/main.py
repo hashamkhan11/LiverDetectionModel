@@ -26,6 +26,9 @@ except ImportError:
 _VISION_KEY      = os.environ.get("VISION_API_KEY", "")
 _VISION_ENDPOINT = os.environ.get("VISION_API_ENDPOINT", "")
 
+# Must be set before keras import so it uses TF as backend
+os.environ.setdefault("KERAS_BACKEND", "tensorflow")
+
 try:
     import nibabel as nib
     NIBABEL_AVAILABLE = True
@@ -35,13 +38,18 @@ except ImportError:
     print("[WARN] nibabel not installed -- NIfTI uploads will be rejected")
 
 try:
-    import tensorflow as tf
-    from tensorflow.keras.models import load_model as keras_load_model
+    import keras
+    from keras.models import load_model as keras_load_model
     TF_AVAILABLE = True
-    print("[OK] TensorFlow available")
+    print(f"[OK] Keras {keras.__version__} available (TF backend)")
 except ImportError:
-    TF_AVAILABLE = False
-    print("[WARN] TensorFlow not installed -- lung cancer model disabled")
+    try:
+        from tensorflow.keras.models import load_model as keras_load_model
+        TF_AVAILABLE = True
+        print("[OK] TensorFlow/Keras available (fallback)")
+    except ImportError:
+        TF_AVAILABLE = False
+        print("[WARN] Keras not available -- lung cancer model disabled")
 
 app = FastAPI(title="Medical AI Detection API", version="7.0.0")
 app.add_middleware(
