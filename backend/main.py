@@ -680,6 +680,10 @@ def _lung_gradcam(img_array: np.ndarray) -> np.ndarray:
     """
     Grad-CAM for the Keras ResNet50 lung cancer model.
     img_array: (1, 224, 224, 3) float32 [0,1]
+
+    Uses logit transform (log p/(1-p)) as score so gradients are non-zero
+    even when the sigmoid output saturates at ≈ 0 or ≈ 1.
+    Falls back to mean-channel activation map if gradients are still tiny.
     Returns: (H, W) float32 heatmap normalised [0,1], or None on failure.
     """
     if lung_cancer_model is None:
@@ -687,25 +691,25 @@ def _lung_gradcam(img_array: np.ndarray) -> np.ndarray:
     try:
         import tensorflow as tf
 
-        # Find last layer with 4-D spatial output (e.g. conv5_block3_out)
-        last_conv_name = None
+        # Find last layer with 4-D spatial output
+        target_name = None
         for layer in reversed(lung_cancer_model.layers):
             try:
                 os = layer.output_shape
                 if isinstance(os, (list, tuple)) and len(os) == 4:
-                    last_conv_name = layer.name
+                    target_name = layer.name
                     break
             except Exception:
                 continue
 
-        if last_conv_name is None:
-            print("  [WARN] Lung Grad-CAM: no conv layer found")
+        if target_name is None:
+            print("  [WARN] Lung Grad-CAM: no spatial layer found")
             return None
 
-        print(f"  [GradCAM] Target layer: {last_conv_name}")
+        print(f"  [GradCAM] Target layer: {target_name}")
         grad_model = tf.keras.Model(
             inputs=lung_cancer_model.inputs,
-            outputs=[lung_cancer_model.get_layer(last_conv_name).output,
+            outputs=[lung_cancer_model.get_layer(target_name).output,
                      lung_cancer_model.output],
         )
 
@@ -713,16 +717,31 @@ def _lung_gradcam(img_array: np.ndarray) -> np.ndarray:
         with tf.GradientTape() as tape:
             tape.watch(img_tf)
             conv_out, preds = grad_model(img_tf, training=False)
-            score = preds[:, 0]
+            # Logit transform: log(p / (1-p))
+            # Gradient = 1 regardless of sigmoid saturation at p≈0 or p≈1
+            p = tf.clip_by_value(preds[:, 0], 1e-6, 1.0 - 1e-6)
+            score = tf.math.log(p / (1.0 - p))
 
         grads = tape.gradient(score, conv_out)
-        pooled = tf.reduce_mean(grads, axis=(0, 1, 2))
-        heatmap = (conv_out[0] @ pooled[..., tf.newaxis]).numpy()
-        heatmap = np.squeeze(heatmap)
+
+        # Check whether gradients are meaningful
+        grad_max = float(tf.reduce_max(tf.abs(grads))) if grads is not None else 0.0
+        print(f"  [GradCAM] grad_max={grad_max:.6f}")
+
+        if grad_max > 1e-8:
+            # Standard Grad-CAM weighted sum
+            pooled = tf.reduce_mean(grads, axis=(0, 1, 2))
+            heatmap = (conv_out[0] @ pooled[..., tf.newaxis]).numpy().squeeze()
+        else:
+            # Fallback: mean channel activation (gradient-free, avoids saturation)
+            print("  [GradCAM] Gradients too small — using mean activation fallback")
+            heatmap = np.mean(conv_out[0].numpy(), axis=-1)
+
         heatmap = np.maximum(heatmap, 0)
         if heatmap.max() > 0:
-            heatmap /= heatmap.max()
+            heatmap = heatmap / heatmap.max()
         return heatmap
+
     except Exception as e:
         print(f"  [WARN] Lung Grad-CAM failed: {e}")
         return None
