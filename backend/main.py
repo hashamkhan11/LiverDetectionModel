@@ -620,9 +620,15 @@ def preprocess_for_lung_cancer(image_bytes: bytes) -> np.ndarray:
 
 
 def _verify_lung_image(image_bytes: bytes, mime_type: str) -> tuple:
-    """Ask vision API if this is a lung/chest CT or X-ray scan."""
+    """
+    Ask vision API if this is a lung/chest CT or X-ray scan.
+    Returns (result, reason) where result is:
+      True  — confirmed lung image
+      False — vision explicitly said 'no' (block)
+      None  — API unavailable / errored (fall through to classifier)
+    """
     if not _VISION_KEY or not _VISION_ENDPOINT:
-        return True, "Visual validation not configured -- skipping"
+        return None, "Visual validation not configured -- using classifier only"
     try:
         img_b64 = base64.b64encode(image_bytes).decode()
         payload = {
@@ -644,8 +650,12 @@ def _verify_lung_image(image_bytes: bytes, mime_type: str) -> tuple:
             json=payload,
             timeout=15,
         )
+        if resp.status_code == 429:
+            print(f"  [Vision] Rate limited -- falling through to classifier")
+            return None, "Vision check unavailable -- using classifier"
         if resp.status_code != 200:
-            return False, "Image could not be verified as a lung scan"
+            print(f"  [Vision] Error {resp.status_code} -- falling through to classifier")
+            return None, "Vision check unavailable -- using classifier"
         answer = (
             resp.json().get("candidates", [{}])[0]
                 .get("content", {}).get("parts", [{}])[0]
@@ -655,8 +665,12 @@ def _verify_lung_image(image_bytes: bytes, mime_type: str) -> tuple:
         is_lung = answer.startswith("yes")
         return is_lung, ("Visual check confirmed lung/chest scan" if is_lung
                          else "Image does not appear to be a lung scan")
-    except Exception:
-        return False, "Image could not be verified as a lung scan"
+    except requests.exceptions.Timeout:
+        print(f"  [Vision] Timeout -- falling through to classifier")
+        return None, "Vision check unavailable -- using classifier"
+    except Exception as e:
+        print(f"  [Vision] Exception: {e} -- falling through to classifier")
+        return None, "Vision check unavailable -- using classifier"
 
 
 # ============================================================
@@ -844,17 +858,18 @@ async def predict_lung(file: UploadFile = File(...)):
         # ── Stage 1: Vision check ─────────────────────────────────
         print(f"\n[Lung Stage 1] Visual validation...")
         mime = "image/png" if fname.endswith(".png") else "image/jpeg"
-        is_lung_img, vision_reason = _verify_lung_image(contents, mime)
+        vision_result, vision_reason = _verify_lung_image(contents, mime)
         print(f"  Result: {vision_reason}")
 
-        if not is_lung_img:
-            print("  [STOP] Not a lung scan -- pipeline stopped")
+        # vision_result: True=confirmed, False=explicit no, None=API unavailable
+        if vision_result is False:
+            print("  [STOP] Vision explicitly rejected image -- pipeline stopped")
             return JSONResponse(content={
                 "prediction": "Not a Lung Scan",
                 "result_class": "not-lung",
                 "cancer_probability": 0,
                 "non_cancer_probability": 0,
-                "decision_reason": vision_reason,
+                "decision_reason": "Image does not appear to be a lung or chest scan",
                 "original_image": None,
             })
 
