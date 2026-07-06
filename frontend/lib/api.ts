@@ -10,8 +10,18 @@ export async function predictScan(file: File): Promise<PredictionResult> {
     const err = await res.json().catch(() => ({}))
     throw new Error((err as { error?: string }).error ?? 'Prediction failed')
   }
-  const text = await res.text()
-  return JSON.parse(text) as PredictionResult
+  return res.json() as Promise<PredictionResult>
+}
+
+export async function predictLungScan(file: File): Promise<PredictionResult> {
+  const fd = new FormData()
+  fd.append('file', file)
+  const res = await fetch(`${BASE_URL}/predict/lung`, { method: 'POST', body: fd })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error ?? 'Lung prediction failed')
+  }
+  return res.json() as Promise<PredictionResult>
 }
 
 export async function submitEvaluation(
@@ -43,7 +53,7 @@ export async function resetEvaluation(): Promise<{ success: boolean }> {
   return res.json()
 }
 
-export async function checkHealth(): Promise<{ status: string; liver_model_enabled?: boolean; pipeline?: string }> {
+export async function checkHealth(): Promise<{ status: string; liver_model_enabled?: boolean; lung_models_enabled?: boolean; pipeline?: string }> {
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 5000)

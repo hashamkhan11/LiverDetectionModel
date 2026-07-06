@@ -7,8 +7,8 @@ import { AuthProvider } from '@/context/AuthContext'
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })
 
 export const metadata: Metadata = {
-  title: 'LiverDetect AI — Liver Tumor Detection',
-  description: 'AI-powered two-stage liver tumor detection from CT scans using ResNet18 deep learning.',
+  title: 'MediScan AI — Liver & Lung Cancer Detection',
+  description: 'AI-powered two-stage liver tumor and lung cancer detection from CT scans using deep learning.',
   icons: {
     icon: '/favicon.svg',
     apple: '/favicon.svg',
@@ -23,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Navbar />
           <main className="flex-1 flex flex-col">{children}</main>
           <footer className="border-t border-slate-200 bg-white py-5 text-center text-xs text-slate-400">
-            <span className="font-medium text-slate-500">LiverDetect AI</span>
+            <span className="font-medium text-slate-500">MediScan AI</span>
             &nbsp;&mdash;&nbsp;For academic and research use only
           </footer>
         </AuthProvider>

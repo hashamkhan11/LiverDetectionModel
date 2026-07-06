@@ -14,8 +14,13 @@ set SCRIPT_DIR=%~dp0
 set MODEL_DIR=%~dp0backend\model
 set LIVER_MODEL=liver_model.pth
 set TUMOR_MODEL=lits_tumor_model_fixed.pth
-set LIVER_URL=https://huggingface.co/hashammubarak1/lits_tumor_model_fixed/resolve/main/liver_model.pth
-set TUMOR_URL=https://huggingface.co/hashammubarak1/lits_tumor_model_fixed/resolve/main/lits_tumor_model_fixed.pth
+set LUNG_CLS_MODEL=lung_classifier_model.pth
+set LUNG_CANCER_MODEL=lung_resnet50_stage1_safe.keras
+set HF_BASE=https://huggingface.co/hashammubarak1/lits_tumor_model_fixed/resolve/main
+set LIVER_URL=%HF_BASE%/liver_model.pth
+set TUMOR_URL=%HF_BASE%/lits_tumor_model_fixed.pth
+set LUNG_CLS_URL=%HF_BASE%/lung_classifier_model.pth
+set LUNG_CANCER_URL=%HF_BASE%/lung_resnet50_stage1_safe.keras
 
 :: ── Create model folder if missing ────────────────────────────
 if not exist "%MODEL_DIR%" (
@@ -93,6 +98,72 @@ exit /b 1
 :tumor_done
 echo.
 echo  [OK] %TUMOR_MODEL% downloaded and installed.
+
+:: ════════════════════════════════════════════════════════════
+::  LUNG CLASSIFIER  (auto-download from HuggingFace)
+:: ════════════════════════════════════════════════════════════
+:check_lung_cls
+echo.
+echo  Checking %LUNG_CLS_MODEL%...
+
+if exist "%MODEL_DIR%\%LUNG_CLS_MODEL%" (
+    echo  [SKIP] %LUNG_CLS_MODEL% already in place.
+    goto :check_lung_cancer
+)
+
+echo  [DOWNLOAD] Downloading lung classifier from HuggingFace (~45 MB)...
+echo             This will take a minute depending on your internet.
+echo.
+
+curl -L --retry 5 --retry-delay 3 -C - --progress-bar -o "%MODEL_DIR%\%LUNG_CLS_MODEL%" "%LUNG_CLS_URL%"
+if %errorlevel% equ 0 goto :lung_cls_done
+
+echo  [INFO] Trying PowerShell download...
+powershell -Command "& { $ProgressPreference='SilentlyContinue'; $attempts=0; do { $attempts++; try { Invoke-WebRequest -Uri '%LUNG_CLS_URL%' -OutFile '%MODEL_DIR%\%LUNG_CLS_MODEL%' -UseBasicParsing; break } catch { Write-Host \"  Retry $attempts...\"; Start-Sleep 3 } } while ($attempts -lt 5) }"
+if %errorlevel% equ 0 goto :lung_cls_done
+
+echo.
+echo  [ERROR] Download failed. Check your internet connection and try again.
+echo.
+pause
+exit /b 1
+
+:lung_cls_done
+echo.
+echo  [OK] %LUNG_CLS_MODEL% downloaded and installed.
+
+:: ════════════════════════════════════════════════════════════
+::  LUNG CANCER MODEL  (auto-download from HuggingFace)
+:: ════════════════════════════════════════════════════════════
+:check_lung_cancer
+echo.
+echo  Checking %LUNG_CANCER_MODEL%...
+
+if exist "%MODEL_DIR%\%LUNG_CANCER_MODEL%" (
+    echo  [SKIP] %LUNG_CANCER_MODEL% already in place.
+    goto :check_backend_env
+)
+
+echo  [DOWNLOAD] Downloading lung cancer model from HuggingFace (~102 MB)...
+echo             This will take a few minutes depending on your internet.
+echo.
+
+curl -L --retry 5 --retry-delay 3 -C - --progress-bar -o "%MODEL_DIR%\%LUNG_CANCER_MODEL%" "%LUNG_CANCER_URL%"
+if %errorlevel% equ 0 goto :lung_cancer_done
+
+echo  [INFO] Trying PowerShell download...
+powershell -Command "& { $ProgressPreference='SilentlyContinue'; $attempts=0; do { $attempts++; try { Invoke-WebRequest -Uri '%LUNG_CANCER_URL%' -OutFile '%MODEL_DIR%\%LUNG_CANCER_MODEL%' -UseBasicParsing; break } catch { Write-Host \"  Retry $attempts...\"; Start-Sleep 3 } } while ($attempts -lt 5) }"
+if %errorlevel% equ 0 goto :lung_cancer_done
+
+echo.
+echo  [ERROR] Download failed. Check your internet connection and try again.
+echo.
+pause
+exit /b 1
+
+:lung_cancer_done
+echo.
+echo  [OK] %LUNG_CANCER_MODEL% downloaded and installed.
 
 :: ════════════════════════════════════════════════════════════
 ::  backend .env  (vision config)

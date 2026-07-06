@@ -34,7 +34,16 @@ except ImportError:
     NIBABEL_AVAILABLE = False
     print("[WARN] nibabel not installed -- NIfTI uploads will be rejected")
 
-app = FastAPI(title="Liver Tumor Detection API", version="6.0.0")
+try:
+    import tensorflow as tf
+    from tensorflow.keras.models import load_model as keras_load_model
+    TF_AVAILABLE = True
+    print("[OK] TensorFlow available")
+except ImportError:
+    TF_AVAILABLE = False
+    print("[WARN] TensorFlow not installed -- lung cancer model disabled")
+
+app = FastAPI(title="Medical AI Detection API", version="7.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -50,8 +59,9 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 device = torch.device("cpu")
 
 print("=" * 60)
-print("  LIVER TUMOR DETECTION — Two-Stage Pipeline")
-print("  Stage 1: Liver/Non-Liver  |  Stage 2: Tumor + Grad-CAM")
+print("  MEDICAL AI — Liver & Lung Detection")
+print("  Liver: Stage1 HU/Vision | Stage2 Tumor+GradCAM")
+print("  Lung : Stage1 Classifier | Stage2 Cancer ResNet50")
 print("=" * 60)
 
 
@@ -168,7 +178,6 @@ LIVER_MODEL_ENABLED = False
 if os.path.exists(LIVER_MODEL_PATH):
     try:
         liver_model = _build_liver_model()
-        # Package loads state dict directly — no wrappers
         liver_model.load_state_dict(
             torch.load(LIVER_MODEL_PATH, map_location=device, weights_only=False),
             strict=True)
@@ -180,6 +189,66 @@ if os.path.exists(LIVER_MODEL_PATH):
         print(f"[ERROR] Liver model failed to load: {e}")
 else:
     print("[WARN] liver_model.pth not found in backend/model/ -- Stage 1 disabled")
+
+
+# ============================================================
+# LOAD LUNG CLASSIFIER (Stage 1) — PyTorch ResNet18
+# ============================================================
+def _build_lung_classifier():
+    """Matches notebook exactly: frozen ResNet18 + regularised FC head."""
+    m = models.resnet18(weights=None)
+    in_f = m.fc.in_features
+    m.fc = nn.Sequential(
+        nn.Dropout(0.6),
+        nn.Linear(in_f, 128),
+        nn.ReLU(),
+        nn.BatchNorm1d(128),
+        nn.Dropout(0.5),
+        nn.Linear(128, 2),
+    )
+    return m
+
+
+LUNG_CLASSIFIER_PATH = os.path.join(MODEL_DIR, "lung_classifier_model.pth")
+lung_classifier = None
+LUNG_CLASSIFIER_ENABLED = False
+
+if os.path.exists(LUNG_CLASSIFIER_PATH):
+    try:
+        lung_classifier = _build_lung_classifier()
+        ckpt = torch.load(LUNG_CLASSIFIER_PATH, map_location=device, weights_only=False)
+        state = ckpt["model_state_dict"] if "model_state_dict" in ckpt else ckpt
+        lung_classifier.load_state_dict(state, strict=True)
+        lung_classifier.to(device).eval()
+        LUNG_CLASSIFIER_ENABLED = True
+        print("[OK] Lung classifier loaded (Stage 1 ENABLED)")
+    except Exception as e:
+        lung_classifier = None
+        print(f"[ERROR] Lung classifier failed to load: {e}")
+else:
+    print("[WARN] lung_classifier_model.pth not found -- lung Stage 1 disabled")
+
+
+# ============================================================
+# LOAD LUNG CANCER MODEL (Stage 2) — Keras ResNet50
+# ============================================================
+LUNG_CANCER_PATH = os.path.join(MODEL_DIR, "lung_resnet50_stage1_safe.keras")
+lung_cancer_model = None
+LUNG_CANCER_ENABLED = False
+LUNG_CANCER_THRESHOLD = 0.99
+
+if TF_AVAILABLE and os.path.exists(LUNG_CANCER_PATH):
+    try:
+        lung_cancer_model = keras_load_model(LUNG_CANCER_PATH)
+        LUNG_CANCER_ENABLED = True
+        print("[OK] Lung cancer model loaded (Stage 2 ENABLED)")
+    except Exception as e:
+        lung_cancer_model = None
+        print(f"[ERROR] Lung cancer model failed to load: {e}")
+elif not TF_AVAILABLE:
+    print("[WARN] TensorFlow not installed -- lung cancer model skipped")
+else:
+    print("[WARN] lung_resnet50_stage1_safe.keras not found -- lung Stage 2 disabled")
 
 print("=" * 60)
 
@@ -510,6 +579,79 @@ def _make_heatmap_images(slice_2d: np.ndarray, cam: np.ndarray) -> tuple:
 
 
 # ============================================================
+# LUNG PREPROCESSING — matches notebook exactly
+# ============================================================
+_lung_cls_transform = transforms.Compose([transforms.ToTensor()])
+
+def preprocess_for_lung_classifier(image_bytes: bytes) -> torch.Tensor:
+    """
+    Matches notebook cell 45 exactly:
+    grayscale → resize 224 → normalize [0,1] → stack to 3-channel → ToTensor
+    """
+    arr = np.frombuffer(image_bytes, dtype=np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
+    img = cv2.resize(img, (224, 224), interpolation=cv2.INTER_AREA)
+    img = img.astype(np.float32) / 255.0
+    img = np.stack([img, img, img], axis=-1)   # (224,224,3)
+    tensor = _lung_cls_transform(img).unsqueeze(0)  # (1,3,224,224)
+    return tensor.to(device)
+
+
+def preprocess_for_lung_cancer(image_bytes: bytes) -> np.ndarray:
+    """
+    Matches notebook inference exactly:
+    grayscale → resize 224 → normalize [0,1] → stack to 3-channel → (1,224,224,3)
+    Model internally applies resnet50.preprocess_input(x * 255.0)
+    """
+    arr = np.frombuffer(image_bytes, dtype=np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
+    img = cv2.resize(img, (224, 224), interpolation=cv2.INTER_AREA)
+    img = img.astype(np.float32) / 255.0
+    img = np.stack([img, img, img], axis=-1)   # (224,224,3)
+    return np.expand_dims(img, axis=0)          # (1,224,224,3)
+
+
+def _verify_lung_image(image_bytes: bytes, mime_type: str) -> tuple:
+    """Ask vision API if this is a lung/chest CT or X-ray scan."""
+    if not _VISION_KEY or not _VISION_ENDPOINT:
+        return True, "Visual validation not configured -- skipping"
+    try:
+        img_b64 = base64.b64encode(image_bytes).decode()
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"inline_data": {"mime_type": mime_type, "data": img_b64}},
+                    {"text": (
+                        "Look at this image carefully. "
+                        "Is it a medical CT scan or X-ray showing the lungs or chest? "
+                        "Answer with ONLY one word: yes or no."
+                    )}
+                ]
+            }],
+            "generationConfig": {"maxOutputTokens": 5, "temperature": 0.0},
+        }
+        resp = requests.post(
+            _VISION_ENDPOINT,
+            headers={"Content-Type": "application/json", "X-goog-api-key": _VISION_KEY},
+            json=payload,
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return False, "Image could not be verified as a lung scan"
+        answer = (
+            resp.json().get("candidates", [{}])[0]
+                .get("content", {}).get("parts", [{}])[0]
+                .get("text", "").strip().lower()
+        )
+        print(f"  [Vision] Lung check: '{answer}'")
+        is_lung = answer.startswith("yes")
+        return is_lung, ("Visual check confirmed lung/chest scan" if is_lung
+                         else "Image does not appear to be a lung scan")
+    except Exception:
+        return False, "Image could not be verified as a lung scan"
+
+
+# ============================================================
 # API ENDPOINTS
 # ============================================================
 @app.get("/health")
@@ -518,8 +660,10 @@ async def health():
         "status": "healthy",
         "nifti_support": NIBABEL_AVAILABLE,
         "liver_model_enabled": LIVER_MODEL_ENABLED,
-        "pipeline": "two-stage (liver → tumor)" if LIVER_MODEL_ENABLED else "single-stage (tumor only)",
-        "detection_logic": "50% slice threshold + any-positive-slice rule",
+        "lung_classifier_enabled": LUNG_CLASSIFIER_ENABLED,
+        "lung_cancer_enabled": LUNG_CANCER_ENABLED,
+        "liver_pipeline": "two-stage (liver → tumor)" if LIVER_MODEL_ENABLED else "single-stage (tumor only)",
+        "lung_pipeline": "two-stage (classifier → cancer)" if (LUNG_CLASSIFIER_ENABLED and LUNG_CANCER_ENABLED) else "partial",
     }
 
 
@@ -663,6 +807,108 @@ async def predict(file: UploadFile = File(...)):
 
         print(f"\n[RESULT] {resp['prediction']} | confidence {resp['tumor_probability']}% "
               f"| heatmap: {'yes' if resp.get('heatmap_image') else 'no'}")
+        print("=" * 60 + "\n")
+        return JSONResponse(content=resp)
+
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/predict/lung")
+async def predict_lung(file: UploadFile = File(...)):
+    fname = file.filename.lower()
+    if not fname.endswith((".jpg", ".jpeg", ".png")):
+        return JSONResponse(status_code=400,
+                            content={"error": "Upload .jpg or .png lung CT/X-ray image"})
+
+    if not LUNG_CLASSIFIER_ENABLED:
+        return JSONResponse(status_code=503,
+                            content={"error": "Lung classifier model not loaded"})
+    if not LUNG_CANCER_ENABLED:
+        return JSONResponse(status_code=503,
+                            content={"error": "Lung cancer model not loaded"})
+
+    try:
+        contents = await file.read()
+        print(f"\n{'='*60}\n  LUNG FILE: {fname}\n{'='*60}")
+
+        # ── Stage 1: Vision check ─────────────────────────────────
+        print(f"\n[Lung Stage 1] Visual validation...")
+        mime = "image/png" if fname.endswith(".png") else "image/jpeg"
+        is_lung_img, vision_reason = _verify_lung_image(contents, mime)
+        print(f"  Result: {vision_reason}")
+
+        if not is_lung_img:
+            print("  [STOP] Not a lung scan -- pipeline stopped")
+            return JSONResponse(content={
+                "prediction": "Not a Lung Scan",
+                "result_class": "not-lung",
+                "cancer_probability": 0,
+                "non_cancer_probability": 0,
+                "decision_reason": vision_reason,
+                "original_image": None,
+            })
+
+        # ── Stage 1b: Lung classifier ─────────────────────────────
+        print(f"\n[Lung Stage 1b] Lung classifier check...")
+        lung_cls = lung_classifier
+        lung_cls.eval()
+        tensor = preprocess_for_lung_classifier(contents)
+        with torch.no_grad():
+            probs = torch.softmax(lung_cls(tensor), dim=1)[0]
+            lung_prob = probs[1].item()
+            nonlung_prob = probs[0].item()
+
+        print(f"  Lung prob: {lung_prob:.3f} | Non-lung prob: {nonlung_prob:.3f}")
+
+        if lung_prob < 0.5:
+            print("  [STOP] Classifier says not a lung image")
+            return JSONResponse(content={
+                "prediction": "Not a Lung Scan",
+                "result_class": "not-lung",
+                "cancer_probability": 0,
+                "non_cancer_probability": 0,
+                "lung_confidence": round(nonlung_prob * 100, 2),
+                "decision_reason": f"Lung classifier: {nonlung_prob*100:.1f}% probability this is not a lung image",
+                "original_image": None,
+            })
+
+        print(f"  [OK] Lung confirmed ({lung_prob*100:.1f}%) -> Stage 2")
+
+        # ── Stage 2: Cancer detection ─────────────────────────────
+        print(f"\n[Lung Stage 2] Cancer detection...")
+        img_input = preprocess_for_lung_cancer(contents)
+        raw_pred = float(lung_cancer_model.predict(img_input, verbose=0)[0][0])
+        is_cancer = raw_pred >= LUNG_CANCER_THRESHOLD
+        print(f"  Raw prediction: {raw_pred:.4f} | Threshold: {LUNG_CANCER_THRESHOLD} | Cancer: {is_cancer}")
+
+        # Build original image b64
+        arr = np.frombuffer(contents, dtype=np.uint8)
+        img_cv = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
+        img_cv = cv2.resize(img_cv, (224, 224))
+        orig_pil = Image.fromarray(img_cv, "L").convert("RGB")
+        buf = io.BytesIO()
+        orig_pil.save(buf, format="PNG")
+        orig_b64 = base64.b64encode(buf.getvalue()).decode()
+
+        conf = raw_pred if is_cancer else (1 - raw_pred)
+
+        resp = {
+            "prediction": "Cancer Detected" if is_cancer else "No Cancer Detected",
+            "result_class": "cancer" if is_cancer else "non-cancer",
+            "cancer_probability": round(raw_pred * 100, 2),
+            "non_cancer_probability": round((1 - raw_pred) * 100, 2),
+            "lung_confidence": round(lung_prob * 100, 2),
+            "decision_reason": (
+                f"Cancer: raw score {raw_pred:.4f} >= threshold {LUNG_CANCER_THRESHOLD}"
+                if is_cancer else
+                f"No Cancer: raw score {raw_pred:.4f} < threshold {LUNG_CANCER_THRESHOLD}"
+            ),
+            "original_image": orig_b64,
+        }
+
+        print(f"\n[RESULT] {resp['prediction']} | score={raw_pred:.4f}")
         print("=" * 60 + "\n")
         return JSONResponse(content=resp)
 

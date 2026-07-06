@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { Activity, BarChart2, ScanLine, LayoutDashboard, History, LogOut, ChevronDown } from 'lucide-react'
+import { Stethoscope, BarChart2, ScanLine, LayoutDashboard, History, LogOut, ChevronDown } from 'lucide-react'
 import { checkHealth } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
 
@@ -43,11 +43,11 @@ export default function Navbar() {
 
         {/* Logo */}
         <Link href={user ? '/dashboard' : '/'} className="flex items-center gap-2.5 shrink-0 group">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-sm transition-shadow group-hover:shadow-md group-hover:shadow-blue-300/50">
-            <Activity className="w-4 h-4 text-white" />
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm transition-shadow group-hover:shadow-md group-hover:shadow-blue-300/50">
+            <Stethoscope className="w-4 h-4 text-white" />
           </div>
           <span className="font-bold text-slate-900 text-[15px] tracking-tight">
-            LiverDetect <span className="text-blue-600">AI</span>
+            MediScan <span className="text-blue-600">AI</span>
           </span>
         </Link>
 
@@ -97,7 +97,7 @@ export default function Navbar() {
                 onClick={() => setMenuOpen(o => !o)}
                 className="flex items-center gap-2 pl-2 pr-2.5 py-1.5 rounded-xl hover:bg-slate-100 transition-colors"
               >
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
                   {initials}
                 </div>
                 <div className="hidden sm:block text-left">

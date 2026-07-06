@@ -7,14 +7,33 @@ import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { getScanHistory } from '@/lib/firestore'
 import type { ScanRecord } from '@/lib/types'
 
-type FilterType = 'all' | 'tumor' | 'non-tumor' | 'not-liver'
+type FilterType = 'all' | 'liver' | 'lung' | 'abnormal' | 'clear'
 
-const filters: { key: FilterType; label: string; active: string; dot: string }[] = [
-  { key: 'all',       label: 'All',      active: 'bg-blue-100 text-blue-700 border-blue-200',    dot: '' },
-  { key: 'tumor',     label: 'Tumor',    active: 'bg-rose-100 text-rose-700 border-rose-200',     dot: 'bg-rose-500' },
-  { key: 'non-tumor', label: 'Healthy',  active: 'bg-emerald-100 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
-  { key: 'not-liver', label: 'Not Liver', active: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-400' },
+const filters: { key: FilterType; label: string; active: string }[] = [
+  { key: 'all',      label: 'All',      active: 'bg-blue-100 text-blue-700 border-blue-200' },
+  { key: 'liver',    label: 'Liver',    active: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
+  { key: 'lung',     label: 'Lung',     active: 'bg-teal-100 text-teal-700 border-teal-200' },
+  { key: 'abnormal', label: 'Abnormal', active: 'bg-rose-100 text-rose-700 border-rose-200' },
+  { key: 'clear',    label: 'Clear',    active: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
 ]
+
+function matchFilter(scan: ScanRecord, filter: FilterType) {
+  if (filter === 'all')      return true
+  if (filter === 'liver')    return scan.scanType === 'liver' || !scan.scanType
+  if (filter === 'lung')     return scan.scanType === 'lung'
+  if (filter === 'abnormal') return ['tumor', 'cancer'].includes(scan.result.result_class)
+  if (filter === 'clear')    return ['non-tumor', 'non-cancer'].includes(scan.result.result_class)
+  return true
+}
+
+function resultBadge(scan: ScanRecord) {
+  const rc = scan.result.result_class
+  if (rc === 'tumor')      return { label: 'Tumor',     Icon: AlertTriangle, cls: 'bg-rose-50 text-rose-600' }
+  if (rc === 'cancer')     return { label: 'Cancer',    Icon: AlertTriangle, cls: 'bg-rose-50 text-rose-600' }
+  if (rc === 'non-tumor')  return { label: 'Healthy',   Icon: CheckCircle2,  cls: 'bg-emerald-50 text-emerald-700' }
+  if (rc === 'non-cancer') return { label: 'Clear',     Icon: CheckCircle2,  cls: 'bg-emerald-50 text-emerald-700' }
+  return                          { label: 'Not Found', Icon: XCircle,       cls: 'bg-amber-50 text-amber-600' }
+}
 
 export default function HistoryPage() {
   const { user, loading: authLoading } = useRequireAuth()
@@ -29,7 +48,7 @@ export default function HistoryPage() {
   }, [user])
 
   const filtered = useMemo(() => scans
-    .filter(s => filter === 'all' || s.result.result_class === filter)
+    .filter(s => matchFilter(s, filter))
     .filter(s => search === '' || s.filename.toLowerCase().includes(search.toLowerCase())),
     [scans, filter, search])
 
@@ -68,13 +87,12 @@ export default function HistoryPage() {
             className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm"
           />
         </div>
-        <div className="flex gap-2">
-          {filters.map(({ key, label, active, dot }) => (
+        <div className="flex flex-wrap gap-2">
+          {filters.map(({ key, label, active }) => (
             <button key={key} onClick={() => setFilter(key)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border transition-colors ${
+              className={`px-3.5 py-2 rounded-xl text-sm font-medium border transition-colors ${
                 filter === key ? active : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
               }`}>
-              {dot && <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />}
               {label}
             </button>
           ))}
@@ -104,58 +122,57 @@ export default function HistoryPage() {
             <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-400 uppercase tracking-widest">
               <div className="col-span-4">File</div>
               <div className="col-span-2">Date</div>
-              <div className="col-span-2">Type</div>
+              <div className="col-span-2">Organ</div>
               <div className="col-span-2">Result</div>
               <div className="col-span-1">Conf.</div>
               <div className="col-span-1 text-right">Eval</div>
             </div>
 
             <div className="divide-y divide-slate-100">
-              {filtered.map(scan => (
-                <div key={scan.id}
-                  className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-slate-50 transition-colors">
+              {filtered.map(scan => {
+                const badge = resultBadge(scan)
+                const isLung = scan.scanType === 'lung'
+                const conf = isLung ? scan.result.cancer_probability : scan.result.tumor_probability
+                return (
+                  <div key={scan.id}
+                    className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-slate-50 transition-colors">
 
-                  <div className="col-span-4 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{scan.filename}</p>
+                    <div className="col-span-4 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">{scan.filename}</p>
+                    </div>
+
+                    <div className="col-span-2 text-xs text-slate-500">
+                      {scan.timestamp.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: '2-digit' })}
+                    </div>
+
+                    <div className="col-span-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${
+                        isLung ? 'bg-teal-50 text-teal-700' : 'bg-blue-50 text-blue-700'
+                      }`}>
+                        {isLung ? 'Lung' : scan.fileType === 'nifti' ? 'NIfTI' : 'Liver'}
+                      </span>
+                    </div>
+
+                    <div className="col-span-2">
+                      <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${badge.cls}`}>
+                        <badge.Icon className="w-3 h-3" />
+                        {badge.label}
+                      </span>
+                    </div>
+
+                    <div className="col-span-1 text-sm font-medium text-slate-700 tabular-nums">
+                      {conf != null ? `${conf.toFixed(1)}%` : '—'}
+                    </div>
+
+                    <div className="col-span-1 flex justify-end">
+                      {scan.evaluation
+                        ? <ClipboardCheck className="w-4 h-4 text-emerald-500" />
+                        : <span className="text-xs text-slate-300">—</span>}
+                    </div>
+
                   </div>
-
-                  <div className="col-span-2 text-xs text-slate-500">
-                    {scan.timestamp.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: '2-digit' })}
-                  </div>
-
-                  <div className="col-span-2">
-                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-medium">
-                      {scan.fileType === 'nifti' ? 'NIfTI' : 'Image'}
-                    </span>
-                  </div>
-
-                  <div className="col-span-2">
-                    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${
-                      scan.result.result_class === 'tumor'       ? 'bg-rose-50 text-rose-600'
-                      : scan.result.result_class === 'not-liver' ? 'bg-amber-50 text-amber-600'
-                      : 'bg-emerald-50 text-emerald-700'
-                    }`}>
-                      {scan.result.result_class === 'tumor'       ? <AlertTriangle className="w-3 h-3" />
-                      : scan.result.result_class === 'not-liver'  ? <XCircle className="w-3 h-3" />
-                      : <CheckCircle2 className="w-3 h-3" />}
-                      {scan.result.result_class === 'tumor'       ? 'Tumor'
-                      : scan.result.result_class === 'not-liver'  ? 'Not Liver'
-                      : 'Healthy'}
-                    </span>
-                  </div>
-
-                  <div className="col-span-1 text-sm font-medium text-slate-700 tabular-nums">
-                    {scan.result.result_class === 'not-liver' ? '—' : `${scan.result.tumor_probability.toFixed(1)}%`}
-                  </div>
-
-                  <div className="col-span-1 flex justify-end">
-                    {scan.evaluation
-                      ? <ClipboardCheck className="w-4 h-4 text-emerald-500" title="Evaluated" />
-                      : <span className="text-xs text-slate-300">—</span>}
-                  </div>
-
-                </div>
-              ))}
+                )
+              })}
             </div>
           </>
         )}

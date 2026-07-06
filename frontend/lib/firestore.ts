@@ -4,9 +4,8 @@ import {
   serverTimestamp, Timestamp,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import type { PredictionResult, MetricsData, ScanRecord } from './types'
+import type { PredictionResult, MetricsData, ScanRecord, ScanType } from './types'
 
-// ─── Save user profile on register ─────────────────────────────────────────
 export async function saveUserProfile(
   userId: string,
   name: string,
@@ -19,18 +18,17 @@ export async function saveUserProfile(
   })
 }
 
-// ─── Get user profile ───────────────────────────────────────────────────────
 export async function getUserProfile(userId: string) {
   const snap = await getDoc(doc(db, 'users', userId))
   if (!snap.exists()) return null
   return snap.data() as { name: string; email: string; role: string }
 }
 
-// ─── Save scan result ───────────────────────────────────────────────────────
 export async function saveScan(
   userId: string,
   filename: string,
-  result: PredictionResult
+  result: PredictionResult,
+  scanType: ScanType = 'liver'
 ): Promise<string> {
   const fileType = filename.toLowerCase().endsWith('.nii') ||
                    filename.toLowerCase().endsWith('.nii.gz')
@@ -40,24 +38,25 @@ export async function saveScan(
     userId,
     filename,
     fileType,
+    scanType,
     timestamp: serverTimestamp(),
     result: {
       prediction:          result.prediction,
       resultClass:         result.result_class,
-      tumorProbability:    result.tumor_probability,
-      nonTumorProbability: result.non_tumor_probability,
+      tumorProbability:    result.tumor_probability    ?? result.cancer_probability    ?? 0,
+      nonTumorProbability: result.non_tumor_probability ?? result.non_cancer_probability ?? 0,
       slicesAnalyzed:      result.slices_analyzed      ?? null,
       affectedSlices:      result.affected_slices      ?? null,
       affectedRatio:       result.affected_ratio        ?? null,
       maxProbability:      result.max_probability       ?? null,
       meanProbability:     result.mean_probability      ?? null,
       decisionReason:      result.decision_reason       ?? null,
+      lungConfidence:      result.lung_confidence       ?? null,
     },
   })
   return docRef.id
 }
 
-// ─── Save evaluation (ground truth) ────────────────────────────────────────
 export async function saveEvaluation(
   scanId: string,
   actualClass: 'tumor' | 'non-tumor',
@@ -72,7 +71,6 @@ export async function saveEvaluation(
   })
 }
 
-// ─── Get scan history for a user ───────────────────────────────────────────
 export async function getScanHistory(userId: string): Promise<ScanRecord[]> {
   const q = query(
     collection(db, 'scans'),
@@ -82,60 +80,70 @@ export async function getScanHistory(userId: string): Promise<ScanRecord[]> {
   const snap = await getDocs(q)
   return snap.docs.map(d => {
     const data = d.data()
+    const st: ScanType = data.scanType ?? 'liver'
+    const isLung = st === 'lung'
     return {
       id:         d.id,
       userId:     data.userId,
       filename:   data.filename,
       fileType:   data.fileType,
+      scanType:   st,
       timestamp:  (data.timestamp as Timestamp)?.toDate() ?? new Date(),
       result: {
-        prediction:          data.result.prediction,
-        result_class:        data.result.resultClass,
-        tumor_probability:   data.result.tumorProbability,
-        non_tumor_probability: data.result.nonTumorProbability,
-        slices_analyzed:     data.result.slicesAnalyzed,
-        affected_slices:     data.result.affectedSlices,
-        affected_ratio:      data.result.affectedRatio,
-        max_probability:     data.result.maxProbability,
-        mean_probability:    data.result.meanProbability,
-        decision_reason:     data.result.decisionReason,
+        prediction:              data.result.prediction,
+        result_class:            data.result.resultClass,
+        tumor_probability:       isLung ? 0 : (data.result.tumorProbability ?? 0),
+        non_tumor_probability:   isLung ? 0 : (data.result.nonTumorProbability ?? 0),
+        cancer_probability:      isLung ? (data.result.tumorProbability ?? 0) : undefined,
+        non_cancer_probability:  isLung ? (data.result.nonTumorProbability ?? 0) : undefined,
+        lung_confidence:         data.result.lungConfidence ?? undefined,
+        slices_analyzed:         data.result.slicesAnalyzed,
+        affected_slices:         data.result.affectedSlices,
+        affected_ratio:          data.result.affectedRatio,
+        max_probability:         data.result.maxProbability,
+        mean_probability:        data.result.meanProbability,
+        decision_reason:         data.result.decisionReason,
       },
       evaluation: data.evaluation ?? null,
     } as ScanRecord
   })
 }
 
-// ─── Get single scan ────────────────────────────────────────────────────────
 export async function getScanById(scanId: string): Promise<ScanRecord | null> {
   const snap = await getDoc(doc(db, 'scans', scanId))
   if (!snap.exists()) return null
   const data = snap.data()
+  const st: ScanType = data.scanType ?? 'liver'
+  const isLung = st === 'lung'
   return {
     id:        snap.id,
     userId:    data.userId,
     filename:  data.filename,
     fileType:  data.fileType,
+    scanType:  st,
     timestamp: (data.timestamp as Timestamp)?.toDate() ?? new Date(),
     result: {
-      prediction:            data.result.prediction,
-      result_class:          data.result.resultClass,
-      tumor_probability:     data.result.tumorProbability,
-      non_tumor_probability: data.result.nonTumorProbability,
-      slices_analyzed:       data.result.slicesAnalyzed,
-      affected_slices:       data.result.affectedSlices,
-      affected_ratio:        data.result.affectedRatio,
-      max_probability:       data.result.maxProbability,
-      mean_probability:      data.result.meanProbability,
-      decision_reason:       data.result.decisionReason,
+      prediction:              data.result.prediction,
+      result_class:            data.result.resultClass,
+      tumor_probability:       isLung ? 0 : (data.result.tumorProbability ?? 0),
+      non_tumor_probability:   isLung ? 0 : (data.result.nonTumorProbability ?? 0),
+      cancer_probability:      isLung ? (data.result.tumorProbability ?? 0) : undefined,
+      non_cancer_probability:  isLung ? (data.result.nonTumorProbability ?? 0) : undefined,
+      lung_confidence:         data.result.lungConfidence ?? undefined,
+      slices_analyzed:         data.result.slicesAnalyzed,
+      affected_slices:         data.result.affectedSlices,
+      affected_ratio:          data.result.affectedRatio,
+      max_probability:         data.result.maxProbability,
+      mean_probability:        data.result.meanProbability,
+      decision_reason:         data.result.decisionReason,
     },
     evaluation: data.evaluation ?? null,
   } as ScanRecord
 }
 
-// ─── Calculate personal metrics from Firestore ─────────────────────────────
 export async function getPersonalMetrics(userId: string): Promise<MetricsData> {
   const scans = await getScanHistory(userId)
-  const evaluated = scans.filter(s => s.evaluation)
+  const evaluated = scans.filter(s => s.evaluation && s.scanType === 'liver')
 
   let tp = 0, tn = 0, fp = 0, fn = 0
   for (const s of evaluated) {
