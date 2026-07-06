@@ -691,11 +691,12 @@ def _lung_gradcam(img_array: np.ndarray) -> np.ndarray:
     try:
         import tensorflow as tf
 
-        # Target conv5_block3_out (7x7x2048) directly by name — layers are flat in
-        # this model (ResNet50 is not nested), confirmed by layer inspection.
+        # conv5_block3_out is the last conv layer — Grad-CAM must target the last
+        # conv layer because its gradients are most class-discriminative (same
+        # reason liver uses layer4, the last ResNet18 block).
         target_name = None
-        for candidate in ['conv5_block3_out', 'conv4_block6_out',
-                          'conv5_block2_out', 'conv4_block5_out']:
+        for candidate in ['conv5_block3_out', 'conv5_block2_out',
+                          'conv5_block1_out', 'conv4_block6_out']:
             try:
                 lung_cancer_model.get_layer(candidate)
                 target_name = candidate
@@ -754,28 +755,38 @@ def _lung_gradcam(img_array: np.ndarray) -> np.ndarray:
 def _make_lung_heatmap_image(gray_224: np.ndarray, cam: np.ndarray) -> tuple:
     """
     Overlay Grad-CAM heatmap on the grayscale lung image.
+    Matches the liver heatmap style: white border, 50/50 blend, PIL output.
     gray_224: uint8 (224, 224) grayscale
     Returns (original_b64, heatmap_overlay_b64).
     """
     try:
-        orig_rgb = cv2.cvtColor(gray_224, cv2.COLOR_GRAY2RGB)
+        orig = Image.fromarray(gray_224, "L").convert("RGB")
+        ImageDraw.Draw(orig).rectangle(
+            [1, 1, orig.width - 2, orig.height - 2], outline="white", width=2)
 
-        def to_b64(arr_rgb):
+        def to_b64(img):
             buf = io.BytesIO()
-            Image.fromarray(arr_rgb).save(buf, format="PNG")
+            img.save(buf, format="PNG")
             return base64.b64encode(buf.getvalue()).decode()
 
-        orig_b64 = to_b64(orig_rgb)
+        orig_b64 = to_b64(orig)
 
         if cam is None or cam.size == 0:
             return orig_b64, None
 
         h, w = gray_224.shape
-        cam_r = cv2.resize(cam, (w, h))
-        cam_r = (cam_r - cam_r.min()) / (cam_r.max() - cam_r.min() + 1e-8)
-        hm_col = cv2.applyColorMap((cam_r * 255).astype(np.uint8), cv2.COLORMAP_JET)
-        overlay = cv2.addWeighted(orig_rgb, 0.5, hm_col, 0.5, 0)
-        return orig_b64, to_b64(overlay)
+        c = cv2.resize(cam.astype(np.float32), (w, h), interpolation=cv2.INTER_CUBIC)
+        # Smooth the coarse 7x7 → 224x224 upsampling grid artefacts
+        c = cv2.GaussianBlur(c, (11, 11), 0)
+        c = (c - c.min()) / (c.max() - c.min() + 1e-8)
+        hm_col = cv2.applyColorMap((c * 255).astype(np.uint8), cv2.COLORMAP_JET)
+        ovl_arr = cv2.addWeighted(
+            cv2.cvtColor(gray_224, cv2.COLOR_GRAY2RGB), 0.5, hm_col, 0.5, 0)
+        ovl = Image.fromarray(ovl_arr)
+        ImageDraw.Draw(ovl).rectangle(
+            [1, 1, ovl.width - 2, ovl.height - 2], outline="white", width=2)
+
+        return orig_b64, to_b64(ovl)
     except Exception as e:
         print(f"  [ERROR] Lung heatmap overlay failed: {e}")
         return None, None
