@@ -674,6 +674,91 @@ def _verify_lung_image(image_bytes: bytes, mime_type: str) -> tuple:
 
 
 # ============================================================
+# LUNG GRAD-CAM (Keras model)
+# ============================================================
+def _lung_gradcam(img_array: np.ndarray) -> np.ndarray:
+    """
+    Grad-CAM for the Keras ResNet50 lung cancer model.
+    img_array: (1, 224, 224, 3) float32 [0,1]
+    Returns: (H, W) float32 heatmap normalised [0,1], or None on failure.
+    """
+    if lung_cancer_model is None:
+        return None
+    try:
+        import tensorflow as tf
+
+        # Find last layer with 4-D spatial output (e.g. conv5_block3_out)
+        last_conv_name = None
+        for layer in reversed(lung_cancer_model.layers):
+            try:
+                os = layer.output_shape
+                if isinstance(os, (list, tuple)) and len(os) == 4:
+                    last_conv_name = layer.name
+                    break
+            except Exception:
+                continue
+
+        if last_conv_name is None:
+            print("  [WARN] Lung Grad-CAM: no conv layer found")
+            return None
+
+        print(f"  [GradCAM] Target layer: {last_conv_name}")
+        grad_model = tf.keras.Model(
+            inputs=lung_cancer_model.inputs,
+            outputs=[lung_cancer_model.get_layer(last_conv_name).output,
+                     lung_cancer_model.output],
+        )
+
+        img_tf = tf.constant(img_array, dtype=tf.float32)
+        with tf.GradientTape() as tape:
+            tape.watch(img_tf)
+            conv_out, preds = grad_model(img_tf, training=False)
+            score = preds[:, 0]
+
+        grads = tape.gradient(score, conv_out)
+        pooled = tf.reduce_mean(grads, axis=(0, 1, 2))
+        heatmap = (conv_out[0] @ pooled[..., tf.newaxis]).numpy()
+        heatmap = np.squeeze(heatmap)
+        heatmap = np.maximum(heatmap, 0)
+        if heatmap.max() > 0:
+            heatmap /= heatmap.max()
+        return heatmap
+    except Exception as e:
+        print(f"  [WARN] Lung Grad-CAM failed: {e}")
+        return None
+
+
+def _make_lung_heatmap_image(gray_224: np.ndarray, cam: np.ndarray) -> tuple:
+    """
+    Overlay Grad-CAM heatmap on the grayscale lung image.
+    gray_224: uint8 (224, 224) grayscale
+    Returns (original_b64, heatmap_overlay_b64).
+    """
+    try:
+        orig_rgb = cv2.cvtColor(gray_224, cv2.COLOR_GRAY2RGB)
+
+        def to_b64(arr_rgb):
+            buf = io.BytesIO()
+            Image.fromarray(arr_rgb).save(buf, format="PNG")
+            return base64.b64encode(buf.getvalue()).decode()
+
+        orig_b64 = to_b64(orig_rgb)
+
+        if cam is None or cam.size == 0:
+            return orig_b64, None
+
+        h, w = gray_224.shape
+        cam_r = cv2.resize(cam, (w, h))
+        cam_r = (cam_r - cam_r.min()) / (cam_r.max() - cam_r.min() + 1e-8)
+        hm_col = cv2.applyColorMap((cam_r * 255).astype(np.uint8), cv2.COLORMAP_JET)
+        overlay = cv2.addWeighted(orig_rgb, 0.5, hm_col, 0.5, 0)
+        return orig_b64, to_b64(overlay)
+    except Exception as e:
+        print(f"  [ERROR] Lung heatmap overlay failed: {e}")
+        return None, None
+
+
+# ============================================================
 # API ENDPOINTS
 # ============================================================
 @app.get("/health")
@@ -906,16 +991,15 @@ async def predict_lung(file: UploadFile = File(...)):
         is_cancer = raw_pred >= LUNG_CANCER_THRESHOLD
         print(f"  Raw prediction: {raw_pred:.4f} | Threshold: {LUNG_CANCER_THRESHOLD} | Cancer: {is_cancer}")
 
-        # Build original image b64
+        # Decode image for heatmap overlay
         arr = np.frombuffer(contents, dtype=np.uint8)
         img_cv = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
         img_cv = cv2.resize(img_cv, (224, 224))
-        orig_pil = Image.fromarray(img_cv, "L").convert("RGB")
-        buf = io.BytesIO()
-        orig_pil.save(buf, format="PNG")
-        orig_b64 = base64.b64encode(buf.getvalue()).decode()
 
-        conf = raw_pred if is_cancer else (1 - raw_pred)
+        # Grad-CAM
+        print(f"\n[Lung Grad-CAM] Generating activation map...")
+        cam = _lung_gradcam(img_input)
+        orig_b64, heat_b64 = _make_lung_heatmap_image(img_cv, cam)
 
         resp = {
             "prediction": "Cancer Detected" if is_cancer else "No Cancer Detected",
@@ -929,6 +1013,8 @@ async def predict_lung(file: UploadFile = File(...)):
                 f"No Cancer: raw score {raw_pred:.4f} < threshold {LUNG_CANCER_THRESHOLD}"
             ),
             "original_image": orig_b64,
+            "heatmap_image": heat_b64,
+            "heatmap_error": None if heat_b64 else "Grad-CAM generation failed",
         }
 
         print(f"\n[RESULT] {resp['prediction']} | score={raw_pred:.4f}")

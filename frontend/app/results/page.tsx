@@ -158,15 +158,66 @@ export default function ResultsPage() {
           </div>
         )}
 
+        {/* Grad-CAM / image panel */}
         {result.original_image && (
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-            <div className="flex items-center gap-2 mb-4">
-              <Eye className="w-4 h-4 text-teal-600" />
-              <h2 className="font-semibold text-slate-800 text-sm">Analysed Image</h2>
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <Eye className="w-4 h-4 text-teal-600" />
+                <h2 className="font-semibold text-slate-800 text-sm">
+                  {result.heatmap_image ? 'Grad-CAM Activation Map' : 'Analysed Image'}
+                </h2>
+              </div>
+              {result.heatmap_image && (
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+                    isCancer ? 'text-rose-600 bg-rose-50 border-rose-200' : 'text-emerald-600 bg-emerald-50 border-emerald-200'
+                  }`}>
+                    {isCancer ? 'Cancer Detected' : 'No Cancer'}
+                  </span>
+                  <button onClick={() => setShowHeatmap(v => !v)}
+                    className="text-xs text-teal-600 hover:text-teal-800 font-medium flex items-center gap-1 transition-colors">
+                    {showHeatmap ? <><EyeOff className="w-3 h-3" /> Hide</> : <><Eye className="w-3 h-3" /> Show</>}
+                  </button>
+                </div>
+              )}
             </div>
-            <div className="border border-slate-200 rounded-xl overflow-hidden bg-black">
-              <img src={`data:image/png;base64,${result.original_image}`} alt="Lung scan" className="w-full h-auto" />
-            </div>
+
+            {result.heatmap_image && showHeatmap ? (
+              <div className="animate-fade-up space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    { label: 'Original CT Image', tag: null,       src: result.original_image },
+                    { label: 'Activation Map',    tag: 'Grad-CAM', src: result.heatmap_image  },
+                  ].map(({ label, tag, src }) => (
+                    <div key={label} className="border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
+                        <p className="text-xs font-medium text-slate-600">{label}</p>
+                        {tag && <span className="text-[10px] text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-md font-mono">{tag}</span>}
+                      </div>
+                      <div className="bg-black">
+                        <img src={`data:image/png;base64,${src}`} alt={label} className="w-full h-auto" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-5 pt-4 border-t border-slate-100 text-xs text-slate-500">
+                  <div className="flex items-center gap-2">
+                    <span className="w-12 h-2.5 bg-gradient-to-r from-blue-400 via-yellow-400 to-red-500 rounded-full" />
+                    Low → High activation
+                  </div>
+                  <div className="flex items-start gap-1.5">
+                    <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                    Red zones most influenced the cancer prediction
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="border border-slate-200 rounded-xl overflow-hidden bg-black">
+                <img src={`data:image/png;base64,${result.original_image}`} alt="Lung scan" className="w-full h-auto" />
+              </div>
+            )}
+
             <p className="text-xs text-slate-400 mt-3 flex items-center gap-1.5">
               <Info className="w-3 h-3 flex-shrink-0" />
               Threshold: 0.99 — only raw scores ≥ 0.99 are classified as Cancer Detected
