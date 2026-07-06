@@ -691,22 +691,23 @@ def _lung_gradcam(img_array: np.ndarray) -> np.ndarray:
     try:
         import tensorflow as tf
 
-        # Find last layer with 4-D spatial output
+        # Target conv5_block3_out (7x7x2048) directly by name — layers are flat in
+        # this model (ResNet50 is not nested), confirmed by layer inspection.
         target_name = None
-        for layer in reversed(lung_cancer_model.layers):
+        for candidate in ['conv5_block3_out', 'conv4_block6_out',
+                          'conv5_block2_out', 'conv4_block5_out']:
             try:
-                os = layer.output_shape
-                if isinstance(os, (list, tuple)) and len(os) == 4:
-                    target_name = layer.name
-                    break
-            except Exception:
+                lung_cancer_model.get_layer(candidate)
+                target_name = candidate
+                break
+            except ValueError:
                 continue
 
         if target_name is None:
-            print("  [WARN] Lung Grad-CAM: no spatial layer found")
+            print("  [WARN] Lung Grad-CAM: no known conv layer found")
             return None
 
-        print(f"  [GradCAM] Target layer: {target_name}")
+        print(f"  [GradCAM] Target: {target_name}")
         grad_model = tf.keras.Model(
             inputs=lung_cancer_model.inputs,
             outputs=[lung_cancer_model.get_layer(target_name).output,
@@ -717,25 +718,28 @@ def _lung_gradcam(img_array: np.ndarray) -> np.ndarray:
         with tf.GradientTape() as tape:
             tape.watch(img_tf)
             conv_out, preds = grad_model(img_tf, training=False)
-            # Logit transform: log(p / (1-p))
-            # Gradient = 1 regardless of sigmoid saturation at p≈0 or p≈1
+            # Logit = log(p/(1-p)): gradient = 1 at sigmoid regardless of saturation
             p = tf.clip_by_value(preds[:, 0], 1e-6, 1.0 - 1e-6)
             score = tf.math.log(p / (1.0 - p))
 
         grads = tape.gradient(score, conv_out)
-
-        # Check whether gradients are meaningful
         grad_max = float(tf.reduce_max(tf.abs(grads))) if grads is not None else 0.0
-        print(f"  [GradCAM] grad_max={grad_max:.6f}")
+        print(f"  [GradCAM] grad_max={grad_max:.8f}")
 
         if grad_max > 1e-8:
-            # Standard Grad-CAM weighted sum
+            # Standard Grad-CAM
             pooled = tf.reduce_mean(grads, axis=(0, 1, 2))
             heatmap = (conv_out[0] @ pooled[..., tf.newaxis]).numpy().squeeze()
+            print("  [GradCAM] Grad-CAM succeeded")
         else:
-            # Fallback: mean channel activation (gradient-free, avoids saturation)
-            print("  [GradCAM] Gradients too small — using mean activation fallback")
-            heatmap = np.mean(conv_out[0].numpy(), axis=-1)
+            # EigenCAM fallback: first principal component of feature maps
+            print("  [GradCAM] Gradients vanished -- using EigenCAM fallback")
+            feat = conv_out[0].numpy()                   # (H, W, C)
+            H, W, C = feat.shape
+            feat_flat = feat.reshape(-1, C)              # (H*W, C)
+            feat_flat -= feat_flat.mean(axis=0)          # centre
+            _, _, Vt = np.linalg.svd(feat_flat, full_matrices=False)
+            heatmap = (feat_flat @ Vt[0]).reshape(H, W)  # first principal component
 
         heatmap = np.maximum(heatmap, 0)
         if heatmap.max() > 0:
