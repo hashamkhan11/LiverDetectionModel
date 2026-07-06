@@ -64,6 +64,28 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, "model")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
+# Auto-download models from HuggingFace Hub when deployed on HF Spaces
+if os.environ.get("SPACE_ID"):
+    try:
+        from huggingface_hub import hf_hub_download
+        _HF_REPO = os.environ.get("HF_MODEL_REPO", "hashammubarak1/lits_tumor_model_fixed")
+        _HF_TOKEN = os.environ.get("HF_TOKEN")
+        _MODEL_FILES = [
+            "lits_tumor_model_fixed.pth",
+            "liver_model.pth",
+            "lung_classifier_model.pth",
+            "lung_resnet50_stage1_safe.keras",
+        ]
+        for _fname in _MODEL_FILES:
+            _dest = os.path.join(MODEL_DIR, _fname)
+            if not os.path.exists(_dest):
+                print(f"[HF] Downloading {_fname} ...")
+                hf_hub_download(repo_id=_HF_REPO, filename=_fname,
+                                local_dir=MODEL_DIR, token=_HF_TOKEN)
+                print(f"[HF] {_fname} ready")
+    except Exception as _e:
+        print(f"[WARN] HF model download failed: {_e}")
+
 device = torch.device("cpu")
 
 print("=" * 60)
