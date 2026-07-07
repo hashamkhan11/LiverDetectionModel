@@ -717,8 +717,8 @@ def _lung_gradcam(img_array: np.ndarray) -> np.ndarray:
         # conv layer because its gradients are most class-discriminative (same
         # reason liver uses layer4, the last ResNet18 block).
         target_name = None
-        for candidate in ['conv5_block3_out', 'conv5_block2_out',
-                          'conv5_block1_out', 'conv4_block6_out']:
+        for candidate in ['conv4_block6_out', 'conv5_block3_out',
+                          'conv5_block2_out', 'conv5_block1_out']:
             try:
                 lung_cancer_model.get_layer(candidate)
                 target_name = candidate
@@ -797,13 +797,28 @@ def _make_lung_heatmap_image(gray_224: np.ndarray, cam: np.ndarray) -> tuple:
             return orig_b64, None
 
         h, w = gray_224.shape
+
+        # Foreground mask — restrict heatmap to inside the scan body only
+        _, mask = cv2.threshold(gray_224, 15, 255, cv2.THRESH_BINARY)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        mask_f = (mask // 255).astype(np.float32)
+
+        # Upsample + smooth (31x31 gives soft blob, matches reference)
         c = cv2.resize(cam.astype(np.float32), (w, h), interpolation=cv2.INTER_CUBIC)
-        # Smooth the coarse 7x7 → 224x224 upsampling grid artefacts
-        c = cv2.GaussianBlur(c, (11, 11), 0)
-        c = (c - c.min()) / (c.max() - c.min() + 1e-8)
-        hm_col = cv2.applyColorMap((c * 255).astype(np.uint8), cv2.COLORMAP_JET)
-        ovl_arr = cv2.addWeighted(
-            cv2.cvtColor(gray_224, cv2.COLOR_GRAY2RGB), 0.5, hm_col, 0.5, 0)
+        c = cv2.GaussianBlur(c, (31, 31), 0)
+        c = np.clip(np.nan_to_num(c, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0)
+
+        img_color = cv2.cvtColor(gray_224, cv2.COLOR_GRAY2BGR).astype(np.float32)
+        hm_col = cv2.applyColorMap((c * 255).astype(np.uint8), cv2.COLORMAP_JET).astype(np.float32)
+
+        # Masked alpha blend: 0.55 inside foreground, 0 outside (no black-padding tint)
+        alpha_map = np.stack([mask_f * 0.55] * 3, axis=-1)
+        ovl_arr = img_color * (1.0 - alpha_map) + hm_col * alpha_map
+        ovl_arr = np.clip(ovl_arr, 0, 255).astype(np.uint8)
+
+        # cv2 is BGR; PIL needs RGB
+        ovl_arr = cv2.cvtColor(ovl_arr, cv2.COLOR_BGR2RGB)
         ovl = Image.fromarray(ovl_arr)
         ImageDraw.Draw(ovl).rectangle(
             [1, 1, ovl.width - 2, ovl.height - 2], outline="white", width=2)
