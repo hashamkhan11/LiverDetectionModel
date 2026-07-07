@@ -55,22 +55,24 @@ echo  [OK] Python %PY_VER% -- compatible.
 echo.
 
 :: ════════════════════════════════════════════════════════════
-::  PYTHON PACKAGES
+::  PYTHON PACKAGES  (only installs if not already done)
 :: ════════════════════════════════════════════════════════════
-echo  Installing Python packages...
-echo  (This may take a few minutes the first time)
-echo.
-
-:: Remove standalone keras if present -- it conflicts with tensorflow's bundled keras
 pip uninstall keras -y >nul 2>&1
 
-pip install -r "%SCRIPT_DIR%backend\requirements.txt" --timeout 300 --retries 5 --disable-pip-version-check
+python -c "import tensorflow, torch, fastapi, nibabel" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo  ERROR: Failed to install Python packages. Check your internet and try again.
-    pause
-    exit /b 1
+    echo  Installing Python packages -- first time only, please wait...
+    echo.
+    pip install -r "%SCRIPT_DIR%backend\requirements.txt" --timeout 300 --retries 5 --disable-pip-version-check
+    if %errorlevel% neq 0 (
+        echo  ERROR: Failed to install Python packages. Check your internet and try again.
+        pause
+        exit /b 1
+    )
+    echo  [OK] Python packages installed.
+) else (
+    echo  [OK] Python packages already installed -- skipping.
 )
-echo  [OK] Python packages ready.
 echo.
 
 :: ── Create model folder if missing ────────────────────────────
