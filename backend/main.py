@@ -38,18 +38,19 @@ except ImportError:
     print("[WARN] nibabel not installed -- NIfTI uploads will be rejected")
 
 try:
-    import keras
-    from keras.models import load_model as keras_load_model
+    from tensorflow.keras.models import load_model as keras_load_model
+    import tensorflow as _tf
     TF_AVAILABLE = True
-    print(f"[OK] Keras {keras.__version__} available (TF backend)")
+    print(f"[OK] TensorFlow {_tf.__version__} / Keras available")
 except ImportError:
     try:
-        from tensorflow.keras.models import load_model as keras_load_model
+        import keras
+        from keras.models import load_model as keras_load_model
         TF_AVAILABLE = True
-        print("[OK] TensorFlow/Keras available (fallback)")
+        print(f"[OK] Standalone Keras {keras.__version__} available")
     except ImportError:
         TF_AVAILABLE = False
-        print("[WARN] Keras not available -- lung cancer model disabled")
+        print("[WARN] Keras/TensorFlow not available -- lung cancer model disabled")
 
 app = FastAPI(title="Medical AI Detection API", version="7.0.0")
 app.add_middleware(
