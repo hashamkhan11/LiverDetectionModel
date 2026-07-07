@@ -64,7 +64,7 @@ echo.
 :: Remove standalone keras if present -- it conflicts with tensorflow's bundled keras
 pip uninstall keras -y >nul 2>&1
 
-pip install -r "%SCRIPT_DIR%backend\requirements.txt" --timeout 300 --retries 5 -q --disable-pip-version-check
+pip install -r "%SCRIPT_DIR%backend\requirements.txt" --timeout 300 --retries 5 --disable-pip-version-check
 if %errorlevel% neq 0 (
     echo  ERROR: Failed to install Python packages. Check your internet and try again.
     pause
