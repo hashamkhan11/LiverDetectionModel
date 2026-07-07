@@ -149,9 +149,11 @@ export default function HistoryPage() {
                             : <Heart className="w-3.5 h-3.5 text-[#818CF8]" />}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-200 truncate">{scan.filename}</p>
+                          <p className="text-sm font-medium text-slate-200 truncate">
+                            {scan.patientName || scan.filename}
+                          </p>
                           {scan.patientName && (
-                            <p className="text-[11px] text-slate-500 truncate">{scan.patientName}</p>
+                            <p className="text-[11px] text-slate-500 truncate font-mono">{scan.filename}</p>
                           )}
                         </div>
                       </div>
