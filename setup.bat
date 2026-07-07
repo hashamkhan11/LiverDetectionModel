@@ -177,11 +177,30 @@ if exist "%SCRIPT_DIR%backend\.env" (
     goto :check_env
 )
 
+echo.
+echo  ────────────────────────────────────────────────────────
+echo    Google Gemini API Key  (for CT scan visual validation)
+echo  ────────────────────────────────────────────────────────
+echo.
+echo  Get your free key at:
+echo    https://aistudio.google.com/app/apikey
+echo.
+echo  Paste your key below and press Enter.
+echo  (Press Enter to skip -- the app still works without it)
+echo.
+set /p GEMINI_KEY=  Your Gemini API Key:
+
 (
-echo VISION_API_KEY=AQ.Ab8RN6LUf4Ig0Ozr-UkdVwW4bqwHRuRHkLSuhZ-sTFz9RZIRNg
+echo VISION_API_KEY=%GEMINI_KEY%
 echo VISION_API_ENDPOINT=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
 ) > "%SCRIPT_DIR%backend\.env"
-echo  [OK] backend\.env created.
+
+if "%GEMINI_KEY%"=="" (
+    echo  [SKIP] No key entered -- visual CT check will be skipped automatically.
+    echo         To add it later, edit backend\.env and fill in VISION_API_KEY.
+) else (
+    echo  [OK] backend\.env created with your Gemini API key.
+)
 
 :: ════════════════════════════════════════════════════════════
 ::  .env.local  (Firebase + API URL)
