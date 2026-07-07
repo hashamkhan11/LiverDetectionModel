@@ -90,7 +90,7 @@ if not exist "%FRONTEND%\.env.local" (
 
 :: ── Install backend dependencies (fast if already installed) ──
 echo  [1/3] Checking Python packages...
-pip install -r "%BACKEND%\requirements.txt" -q --disable-pip-version-check
+pip install -r "%BACKEND%\requirements.txt" -q --disable-pip-version-check --timeout 300 --retries 5
 if %errorlevel% neq 0 (
     echo  ERROR: Failed to install Python packages.
     pause
