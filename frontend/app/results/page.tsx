@@ -6,6 +6,7 @@ import Link from 'next/link'
 import {
   AlertTriangle, CheckCircle2, ScanLine, BarChart2,
   Loader2, ChevronRight, Info, Eye, EyeOff, XCircle, Wind, Heart,
+  Download,
 } from 'lucide-react'
 import { submitEvaluation } from '@/lib/api'
 import { saveEvaluation } from '@/lib/firestore'
@@ -23,6 +24,170 @@ export default function ResultsPage() {
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [showHeatmap, setShowHeatmap] = useState(true)
+  const [downloading, setDownloading] = useState(false)
+
+  const handleDownloadPDF = async () => {
+    if (!result) return
+    setDownloading(true)
+    try {
+      const { default: jsPDF } = await import('jspdf')
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const W = 210, mg = 18, cW = W - mg * 2
+      let y = mg
+
+      // ── Header bar ──────────────────────────────────────────────
+      doc.setFillColor(15, 23, 42)
+      doc.rect(0, 0, W, 36, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(18)
+      doc.text('MediScan AI', mg, 17)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8.5)
+      doc.text('AI-Assisted Medical Imaging Report', mg, 25)
+      const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+      doc.text(dateStr, W - mg, 25, { align: 'right' })
+      y = 46
+
+      // ── File / scan type row ────────────────────────────────────
+      doc.setTextColor(100, 116, 139)
+      doc.setFontSize(7.5)
+      doc.setFont('helvetica', 'bold')
+      doc.text('FILE', mg, y)
+      doc.text('SCAN TYPE', mg + cW / 2, y)
+      y += 5
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9.5)
+      doc.setTextColor(15, 23, 42)
+      const fn = filename.length > 38 ? filename.slice(0, 35) + '…' : filename
+      doc.text(fn || 'Unknown', mg, y)
+      doc.text(scanType === 'liver' ? 'Liver Tumor Detection' : 'Lung Cancer Detection', mg + cW / 2, y)
+      y += 8
+
+      // ── Divider ─────────────────────────────────────────────────
+      doc.setDrawColor(226, 232, 240)
+      doc.line(mg, y, W - mg, y)
+      y += 8
+
+      // ── Verdict box ─────────────────────────────────────────────
+      const isPos = ['tumor', 'cancer'].includes(result.result_class)
+      if (isPos) { doc.setFillColor(255, 241, 242); doc.setDrawColor(254, 202, 202) }
+      else        { doc.setFillColor(240, 253, 244); doc.setDrawColor(167, 243, 208) }
+      doc.roundedRect(mg, y, cW, 24, 3, 3, 'FD')
+      const [vr, vg, vb] = isPos ? [190, 18, 60] : [5, 150, 105]
+      doc.setTextColor(vr, vg, vb)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(14)
+      doc.text(result.prediction, W / 2, y + 11, { align: 'center' })
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8.5)
+      const conf = scanType === 'liver'
+        ? (result.tumor_probability ?? 0).toFixed(1)
+        : (result.cancer_probability ?? 0).toFixed(1)
+      doc.text(`Confidence: ${conf}%`, W / 2, y + 19, { align: 'center' })
+      y += 30
+
+      // ── Stats grid ──────────────────────────────────────────────
+      doc.setTextColor(71, 85, 105)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8)
+      doc.text('ANALYSIS DETAILS', mg, y)
+      y += 5
+
+      const stats = scanType === 'liver'
+        ? [
+            ['Slices Analyzed', String(result.slices_analyzed ?? '—')],
+            ['Affected Slices',  String(result.affected_slices  ?? '—')],
+            ['Affected Ratio',   String(result.affected_ratio   ?? '—')],
+            ['Max Probability',  result.max_probability != null ? `${(result.max_probability * 100).toFixed(1)}%` : '—'],
+          ]
+        : [
+            ['Cancer Score',    `${(result.cancer_probability ?? 0).toFixed(1)}%`],
+            ['Clear Score',     `${(result.non_cancer_probability ?? 0).toFixed(1)}%`],
+            ['Lung Confidence', `${(result.lung_confidence ?? 0).toFixed(1)}%`],
+          ]
+
+      const colW = cW / stats.length
+      stats.forEach(([label, value], i) => {
+        const x = mg + i * colW
+        doc.setFillColor(248, 250, 252)
+        doc.setDrawColor(226, 232, 240)
+        doc.roundedRect(x, y, colW - 3, 17, 2, 2, 'FD')
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(11)
+        doc.setTextColor(15, 23, 42)
+        doc.text(value, x + (colW - 3) / 2, y + 8, { align: 'center' })
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(7)
+        doc.setTextColor(100, 116, 139)
+        doc.text(label, x + (colW - 3) / 2, y + 13.5, { align: 'center' })
+      })
+      y += 23
+
+      // ── Decision reason ─────────────────────────────────────────
+      if (result.decision_reason) {
+        doc.setFillColor(239, 246, 255)
+        doc.setDrawColor(191, 219, 254)
+        doc.roundedRect(mg, y, cW, 13, 2, 2, 'FD')
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(7.5)
+        doc.setTextColor(30, 64, 175)
+        const dr = result.decision_reason.length > 95 ? result.decision_reason.slice(0, 92) + '…' : result.decision_reason
+        doc.text(dr, mg + 3, y + 8)
+        y += 19
+      }
+
+      // ── Images ──────────────────────────────────────────────────
+      if (result.original_image) {
+        doc.setTextColor(71, 85, 105)
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(8)
+        doc.text('IMAGING RESULTS', mg, y)
+        y += 5
+
+        const remainH = 297 - mg - 20 - y
+        const imgH = Math.min(remainH, 68)
+
+        if (result.heatmap_image) {
+          const imgW = (cW - 4) / 2
+          doc.setFillColor(0, 0, 0); doc.rect(mg, y, imgW, imgH, 'F')
+          doc.addImage('data:image/png;base64,' + result.original_image, 'PNG', mg, y, imgW, imgH)
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(100, 116, 139)
+          doc.text('Original CT Image', mg, y + imgH + 4)
+
+          const hx = mg + imgW + 4
+          doc.setFillColor(0, 0, 0); doc.rect(hx, y, imgW, imgH, 'F')
+          doc.addImage('data:image/png;base64,' + result.heatmap_image, 'PNG', hx, y, imgW, imgH)
+          doc.text('Grad-CAM Activation Map', hx, y + imgH + 4)
+        } else {
+          const imgW = cW / 2
+          doc.setFillColor(0, 0, 0); doc.rect(mg, y, imgW, imgH, 'F')
+          doc.addImage('data:image/png;base64,' + result.original_image, 'PNG', mg, y, imgW, imgH)
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(100, 116, 139)
+          doc.text('Original CT Image', mg, y + imgH + 4)
+        }
+        y += imgH + 10
+      }
+
+      // ── Footer ──────────────────────────────────────────────────
+      const fy = 297 - 12
+      doc.setDrawColor(226, 232, 240)
+      doc.line(mg, fy - 4, W - mg, fy - 4)
+      doc.setFont('helvetica', 'italic')
+      doc.setFontSize(6.5)
+      doc.setTextColor(148, 163, 184)
+      doc.text(
+        'This report is generated by MediScan AI for research and educational purposes only. It is not a substitute for professional medical diagnosis.',
+        W / 2, fy, { align: 'center' }
+      )
+
+      const label = scanType === 'liver' ? 'liver' : 'lung'
+      const d = new Date().toISOString().split('T')[0]
+      doc.save(`MediScan_${label}_report_${d}.pdf`)
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   useEffect(() => {
     const st = (sessionStorage.getItem('scan_type') as 'liver' | 'lung') ?? 'liver'
@@ -224,6 +389,12 @@ export default function ResultsPage() {
             </p>
           </div>
         )}
+
+        <button onClick={handleDownloadPDF} disabled={downloading}
+          className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors text-sm shadow-sm">
+          {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          {downloading ? 'Generating PDF…' : 'Download Report (PDF)'}
+        </button>
 
         <div className="grid grid-cols-2 gap-3">
           <Link href="/scan?mode=lung"
@@ -452,6 +623,12 @@ export default function ResultsPage() {
           <p className="text-emerald-600 text-xs mt-0.5">Evaluation metrics updated.</p>
         </div>
       )}
+
+      <button onClick={handleDownloadPDF} disabled={downloading}
+        className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors text-sm shadow-sm">
+        {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+        {downloading ? 'Generating PDF…' : 'Download Report (PDF)'}
+      </button>
 
       <div className="grid grid-cols-2 gap-3">
         <Link href="/scan?mode=liver" className="flex items-center justify-center gap-2 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 font-medium py-3 rounded-xl transition-colors text-sm shadow-sm">
