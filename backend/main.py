@@ -456,14 +456,12 @@ def _verify_ct_scan(image_bytes: bytes, mime_type: str = "image/jpeg") -> tuple:
             json=payload,
             timeout=15,
         )
-        data = resp.json()
-        if resp.status_code == 429:
-            print(f"  [Vision] Service busy -- blocking non-verified image")
-            return False, "Image could not be verified as a liver CT scan"
         if resp.status_code != 200:
-            print(f"  [Vision] Service error {resp.status_code} -- blocking non-verified image")
-            return False, "Image could not be verified as a liver CT scan"
+            # 429 = rate limited / quota exhausted, 401/403 = key expired — all fall through
+            print(f"  [Vision] Service unavailable ({resp.status_code}) -- falling through to tumor analysis")
+            return True, "Visual validation unavailable -- proceeding with analysis"
 
+        data = resp.json()
         answer = (
             data.get("candidates", [{}])[0]
                 .get("content", {})
@@ -479,11 +477,11 @@ def _verify_ct_scan(image_bytes: bytes, mime_type: str = "image/jpeg") -> tuple:
         return is_ct, reason
 
     except requests.exceptions.Timeout:
-        print(f"  [Vision] Timeout -- blocking non-verified image")
-        return False, "Image could not be verified as a liver CT scan"
+        print(f"  [Vision] Timeout -- falling through to tumor analysis")
+        return True, "Visual validation unavailable -- proceeding with analysis"
     except Exception as e:
-        print(f"  [Vision] Error -- blocking non-verified image")
-        return False, "Image could not be verified as a liver CT scan"
+        print(f"  [Vision] Exception -- falling through to tumor analysis")
+        return True, "Visual validation unavailable -- proceeding with analysis"
 
 
 # ============================================================
