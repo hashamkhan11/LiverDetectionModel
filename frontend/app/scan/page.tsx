@@ -28,6 +28,9 @@ function ScanPageInner() {
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
+  const [patientName,   setPatientName]   = useState('')
+  const [patientAge,    setPatientAge]    = useState('')
+  const [patientGender, setPatientGender] = useState('')
 
   useEffect(() => {
     const m = params.get('mode')
@@ -59,6 +62,9 @@ function ScanPageInner() {
         sessionStorage.setItem('scan_type', 'liver')
         sessionStorage.setItem('liver_result', JSON.stringify(result))
         sessionStorage.setItem('liver_filename', file.name)
+        sessionStorage.setItem('patient_name',   patientName.trim())
+        sessionStorage.setItem('patient_age',    patientAge)
+        sessionStorage.setItem('patient_gender', patientGender)
         const scanId = await saveScan(user.uid, file.name, result, 'liver')
         sessionStorage.setItem('liver_scan_id', scanId)
       } else {
@@ -66,6 +72,9 @@ function ScanPageInner() {
         sessionStorage.setItem('scan_type', 'lung')
         sessionStorage.setItem('lung_result', JSON.stringify(result))
         sessionStorage.setItem('lung_filename', file.name)
+        sessionStorage.setItem('patient_name',   patientName.trim())
+        sessionStorage.setItem('patient_age',    patientAge)
+        sessionStorage.setItem('patient_gender', patientGender)
         await saveScan(user.uid, file.name, result, 'lung')
       }
       router.push('/results')
@@ -96,6 +105,35 @@ function ScanPageInner() {
           <p className="text-slate-500 text-sm mt-1">
             Select an organ type and upload your scan to run the detection pipeline
           </p>
+        </div>
+
+        {/* ── Patient information ─────────────────────────────────── */}
+        <div className="bg-[#0A0B14] border border-[#1E2130] rounded-2xl p-5 mb-7">
+          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4">Patient Information</p>
+          <div className="grid grid-cols-5 gap-3">
+            <div className="col-span-3">
+              <label className="text-xs text-slate-500 mb-1.5 block">Full Name <span className="text-rose-400">*</span></label>
+              <input type="text" value={patientName} onChange={e => setPatientName(e.target.value)}
+                placeholder="e.g. Ahmed Khan"
+                className="w-full bg-[#0F1018] border border-[#1E2130] rounded-xl px-3 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-[#00C2FF]/50 transition-colors" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1.5 block">Age <span className="text-rose-400">*</span></label>
+              <input type="number" value={patientAge} onChange={e => setPatientAge(e.target.value)}
+                placeholder="45" min={1} max={120}
+                className="w-full bg-[#0F1018] border border-[#1E2130] rounded-xl px-3 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-[#00C2FF]/50 transition-colors" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1.5 block">Gender <span className="text-rose-400">*</span></label>
+              <select value={patientGender} onChange={e => setPatientGender(e.target.value)}
+                className="w-full bg-[#0F1018] border border-[#1E2130] rounded-xl px-3 py-2.5 text-sm text-slate-400 focus:outline-none focus:border-[#00C2FF]/50 transition-colors">
+                <option value="" disabled>Select</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         {/* ── Organ tabs ─────────────────────────────────────────── */}
@@ -209,7 +247,7 @@ function ScanPageInner() {
         {/* Analyze button */}
         <button
           onClick={analyze}
-          disabled={!file || loading}
+          disabled={!file || loading || !patientName.trim() || !patientAge || !patientGender}
           className={`mt-6 w-full flex items-center justify-center gap-2 font-semibold py-4 rounded-xl transition-all text-base shadow-sm disabled:bg-[#1E2130] disabled:text-slate-600 disabled:cursor-not-allowed disabled:shadow-none ${
             isLung
               ? 'bg-[#2DD4BF] hover:bg-[#14B8A6] active:bg-[#0F9186] text-[#08090F] shadow-[#2DD4BF]/15'

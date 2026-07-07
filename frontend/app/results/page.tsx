@@ -25,6 +25,9 @@ export default function ResultsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [showHeatmap, setShowHeatmap] = useState(true)
   const [downloading, setDownloading] = useState(false)
+  const [patientName,   setPatientName]   = useState('')
+  const [patientAge,    setPatientAge]    = useState('')
+  const [patientGender, setPatientGender] = useState('')
 
   const handleDownloadPDF = async () => {
     if (!result) return
@@ -60,6 +63,21 @@ export default function ResultsPage() {
       const fn = filename.length > 38 ? filename.slice(0, 35) + '…' : filename
       doc.text(fn || 'Unknown', mg, y)
       doc.text(scanType === 'liver' ? 'Liver Tumor Detection' : 'Lung Cancer Detection', mg + cW / 2, y)
+      y += 10
+
+      doc.setTextColor(100, 116, 139)
+      doc.setFontSize(7.5)
+      doc.setFont('helvetica', 'bold')
+      doc.text('PATIENT', mg, y)
+      doc.text('AGE', mg + cW * 0.52, y)
+      doc.text('GENDER', mg + cW * 0.72, y)
+      y += 5
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9.5)
+      doc.setTextColor(15, 23, 42)
+      doc.text(patientName || '—', mg, y)
+      doc.text(patientAge ? `${patientAge} yrs` : '—', mg + cW * 0.52, y)
+      doc.text(patientGender || '—', mg + cW * 0.72, y)
       y += 8
 
       doc.setDrawColor(226, 232, 240)
@@ -186,6 +204,9 @@ export default function ResultsPage() {
     const raw = sessionStorage.getItem(st === 'liver' ? 'liver_result' : 'lung_result')
     const fn  = sessionStorage.getItem(st === 'liver' ? 'liver_filename' : 'lung_filename') ?? ''
     const sid = sessionStorage.getItem('liver_scan_id') ?? ''
+    setPatientName(sessionStorage.getItem('patient_name') ?? '')
+    setPatientAge(sessionStorage.getItem('patient_age') ?? '')
+    setPatientGender(sessionStorage.getItem('patient_gender') ?? '')
     if (!raw) { router.replace('/scan'); return }
     try { setResult(JSON.parse(raw)); setFilename(fn); setScanId(sid) }
     catch { router.replace('/scan') }
