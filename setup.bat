@@ -129,7 +129,7 @@ if exist "%MODEL_DIR%\%TUMOR_MODEL%" (
     for %%A in ("%MODEL_DIR%\%TUMOR_MODEL%") do set FILE_SIZE=%%~zA
     if !FILE_SIZE! GEQ 90000000 (
         echo  [SKIP] %TUMOR_MODEL% already in place ^(!FILE_SIZE! bytes^).
-        goto :check_backend_env
+        goto :check_lung_cls
     )
     echo  [WARN] %TUMOR_MODEL% is incomplete ^(!FILE_SIZE! bytes^). Re-downloading...
     del "%MODEL_DIR%\%TUMOR_MODEL%"
