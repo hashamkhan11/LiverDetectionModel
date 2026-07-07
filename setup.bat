@@ -22,6 +22,37 @@ set TUMOR_URL=%HF_BASE%/lits_tumor_model_fixed.pth
 set LUNG_CLS_URL=%HF_BASE%/lung_classifier_model.pth
 set LUNG_CANCER_URL=%HF_BASE%/lung_resnet50_stage1_safe.keras
 
+:: ── Check Python version (must be 3.11) ───────────────────────
+python --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo  ERROR: Python is not installed.
+    echo  Download Python 3.11 from:
+    echo    https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe
+    echo  During install: check "Add Python to PATH" then click Install Now.
+    echo.
+    pause
+    exit /b 1
+)
+for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set PY_VER=%%v
+for /f "tokens=1,2 delims=." %%a in ("%PY_VER%") do (
+    set PY_MAJOR=%%a
+    set PY_MINOR=%%b
+)
+if %PY_MINOR% gtr 11 (
+    echo  ERROR: Python %PY_VER% is not supported. Python 3.11 is required.
+    echo.
+    echo  TensorFlow does not support Python 3.12 or 3.13 yet.
+    echo  Download Python 3.11 from:
+    echo    https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe
+    echo  During install: check "Add Python to PATH" then click Install Now.
+    echo  Then close this window and run setup.bat again.
+    echo.
+    pause
+    exit /b 1
+)
+echo  [OK] Python %PY_VER% -- compatible.
+echo.
+
 :: ── Create model folder if missing ────────────────────────────
 if not exist "%MODEL_DIR%" (
     mkdir "%MODEL_DIR%"
