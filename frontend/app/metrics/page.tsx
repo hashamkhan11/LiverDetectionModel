@@ -4,17 +4,12 @@ import { useEffect, useState, useCallback } from 'react'
 import { RefreshCw, Trash2, Loader2, BarChart2, AlertCircle, TrendingUp } from 'lucide-react'
 import { getMetrics, resetEvaluation } from '@/lib/api'
 import { useRequireAuth } from '@/hooks/useRequireAuth'
-
-interface MetricsData {
-  accuracy:   number; precision: number; recall: number; f1: number
-  tp: number; tn: number; fp: number; fn: number
-  total_evaluated: number; total_correct: number
-}
+import type { MetricsData } from '@/lib/types'
 
 function MetricCard({ label, value, color, barColor, icon: Icon }: {
   label: string; value: number; color: string; barColor: string; icon: React.ElementType
 }) {
-  const pct = Math.round(value * 100)
+  const pct = Math.round(value)
   return (
     <div className="bg-[#0F1018] border border-[#1E2130] rounded-2xl p-6 hover:border-[#282B40] transition-all">
       <div className="flex items-center justify-between mb-5">
@@ -46,7 +41,7 @@ export default function MetricsPage() {
     setLoading(true); setError(null)
     try {
       const data = await getMetrics()
-      setMetrics(data)
+      setMetrics(data.metrics)
     } catch {
       setError('Could not load metrics. Is the backend running?')
     } finally {
@@ -77,7 +72,7 @@ export default function MetricsPage() {
     </div>
   )
 
-  if (!metrics || metrics.total_evaluated === 0) return (
+  if (!metrics || metrics.total_samples === 0) return (
     <div className="flex-1 flex items-center justify-center">
       <div className="text-center">
         <div className="w-14 h-14 bg-[#0F1018] border border-[#1E2130] rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -88,6 +83,8 @@ export default function MetricsPage() {
       </div>
     </div>
   )
+
+  const correct = metrics.true_positives + metrics.true_negatives
 
   return (
     <div className="min-h-[calc(100vh-130px)]">
@@ -119,10 +116,10 @@ export default function MetricsPage() {
         <div className="flex items-center gap-2 bg-[#00C2FF]/10 border border-[#00C2FF]/20 rounded-xl px-4 py-2.5 w-fit">
           <TrendingUp className="w-4 h-4 text-[#00C2FF]" />
           <span className="text-[#00C2FF] text-sm font-semibold">
-            {metrics.total_evaluated} evaluation{metrics.total_evaluated !== 1 ? 's' : ''} submitted
+            {metrics.total_samples} evaluation{metrics.total_samples !== 1 ? 's' : ''} submitted
           </span>
           <span className="text-slate-500 text-sm">·</span>
-          <span className="text-slate-400 text-sm">{metrics.total_correct} correct</span>
+          <span className="text-slate-400 text-sm">{correct} correct</span>
         </div>
 
         {/* Tabs */}
@@ -141,10 +138,10 @@ export default function MetricsPage() {
 
         {/* Metric cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <MetricCard label="Accuracy"  value={metrics.accuracy}  icon={BarChart2}  color="text-[#00C2FF]" barColor="bg-[#00C2FF]" />
-          <MetricCard label="Precision" value={metrics.precision} icon={TrendingUp} color="text-[#818CF8]" barColor="bg-[#818CF8]" />
-          <MetricCard label="Recall"    value={metrics.recall}    icon={TrendingUp} color="text-[#34D399]" barColor="bg-[#34D399]" />
-          <MetricCard label="F1 Score"  value={metrics.f1}        icon={BarChart2}  color="text-[#2DD4BF]" barColor="bg-[#2DD4BF]" />
+          <MetricCard label="Accuracy"  value={metrics.accuracy}   icon={BarChart2}  color="text-[#00C2FF]" barColor="bg-[#00C2FF]" />
+          <MetricCard label="Precision" value={metrics.precision}  icon={TrendingUp} color="text-[#818CF8]" barColor="bg-[#818CF8]" />
+          <MetricCard label="Recall"    value={metrics.recall}     icon={TrendingUp} color="text-[#34D399]" barColor="bg-[#34D399]" />
+          <MetricCard label="F1 Score"  value={metrics.f1_score}   icon={BarChart2}  color="text-[#2DD4BF]" barColor="bg-[#2DD4BF]" />
         </div>
 
         {/* Confusion matrix */}
@@ -156,10 +153,10 @@ export default function MetricsPage() {
           <div className="p-6">
             <div className="grid grid-cols-2 gap-4 max-w-sm mx-auto">
               {[
-                { label: 'True Positive',  abbr: 'TP', value: metrics.tp, cls: 'bg-[#34D399]/10 border-[#34D399]/25 text-[#34D399]' },
-                { label: 'False Positive', abbr: 'FP', value: metrics.fp, cls: 'bg-rose-500/10 border-rose-500/25 text-rose-400' },
-                { label: 'False Negative', abbr: 'FN', value: metrics.fn, cls: 'bg-rose-500/10 border-rose-500/25 text-rose-400' },
-                { label: 'True Negative',  abbr: 'TN', value: metrics.tn, cls: 'bg-[#34D399]/10 border-[#34D399]/25 text-[#34D399]' },
+                { label: 'True Positive',  abbr: 'TP', value: metrics.true_positives,  cls: 'bg-[#34D399]/10 border-[#34D399]/25 text-[#34D399]' },
+                { label: 'False Positive', abbr: 'FP', value: metrics.false_positives, cls: 'bg-rose-500/10 border-rose-500/25 text-rose-400' },
+                { label: 'False Negative', abbr: 'FN', value: metrics.false_negatives, cls: 'bg-rose-500/10 border-rose-500/25 text-rose-400' },
+                { label: 'True Negative',  abbr: 'TN', value: metrics.true_negatives,  cls: 'bg-[#34D399]/10 border-[#34D399]/25 text-[#34D399]' },
               ].map(({ label, abbr, value, cls }) => (
                 <div key={abbr} className={`border rounded-xl p-4 text-center ${cls}`}>
                   <div className="text-3xl font-bold tabular-nums mb-1">{value}</div>

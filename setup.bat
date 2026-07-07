@@ -57,9 +57,7 @@ echo.
 :: ════════════════════════════════════════════════════════════
 ::  PYTHON PACKAGES  (only installs if not already done)
 :: ════════════════════════════════════════════════════════════
-pip uninstall keras -y >nul 2>&1
-
-python -c "import tensorflow, torch, fastapi, nibabel" >nul 2>&1
+python -c "import tensorflow, keras, torch, fastapi, nibabel" >nul 2>&1
 if %errorlevel% neq 0 (
     echo  Installing Python packages -- first time only, please wait...
     echo.
@@ -172,11 +170,17 @@ echo  Checking %LUNG_CLS_MODEL%...
 if exist "%MODEL_DIR%\%LUNG_CLS_MODEL%" (
     for %%A in ("%MODEL_DIR%\%LUNG_CLS_MODEL%") do set FILE_SIZE=%%~zA
     if !FILE_SIZE! GEQ 35000000 (
-        echo  [SKIP] %LUNG_CLS_MODEL% already in place ^(!FILE_SIZE! bytes^).
-        goto :check_lung_cancer
+        python -c "import torch, sys; torch.load(sys.argv[1], map_location='cpu', weights_only=False)" "%MODEL_DIR%\%LUNG_CLS_MODEL%" >nul 2>&1
+        if !errorlevel! equ 0 (
+            echo  [SKIP] %LUNG_CLS_MODEL% already in place ^(!FILE_SIZE! bytes^).
+            goto :check_lung_cancer
+        )
+        echo  [WARN] %LUNG_CLS_MODEL% is corrupted ^(bad file -- re-downloading^)...
+        del "%MODEL_DIR%\%LUNG_CLS_MODEL%"
+    ) else (
+        echo  [WARN] %LUNG_CLS_MODEL% is incomplete ^(!FILE_SIZE! bytes^). Re-downloading...
+        del "%MODEL_DIR%\%LUNG_CLS_MODEL%"
     )
-    echo  [WARN] %LUNG_CLS_MODEL% is incomplete ^(!FILE_SIZE! bytes^). Re-downloading...
-    del "%MODEL_DIR%\%LUNG_CLS_MODEL%"
 )
 
 echo  [DOWNLOAD] Downloading lung classifier from HuggingFace (~45 MB)...
@@ -210,11 +214,17 @@ echo  Checking %LUNG_CANCER_MODEL%...
 if exist "%MODEL_DIR%\%LUNG_CANCER_MODEL%" (
     for %%A in ("%MODEL_DIR%\%LUNG_CANCER_MODEL%") do set FILE_SIZE=%%~zA
     if !FILE_SIZE! GEQ 85000000 (
-        echo  [SKIP] %LUNG_CANCER_MODEL% already in place ^(!FILE_SIZE! bytes^).
-        goto :check_backend_env
+        python -c "import zipfile, sys; zipfile.ZipFile(sys.argv[1]).close()" "%MODEL_DIR%\%LUNG_CANCER_MODEL%" >nul 2>&1
+        if !errorlevel! equ 0 (
+            echo  [SKIP] %LUNG_CANCER_MODEL% already in place ^(!FILE_SIZE! bytes^).
+            goto :check_backend_env
+        )
+        echo  [WARN] %LUNG_CANCER_MODEL% is corrupted ^(bad file -- re-downloading^)...
+        del "%MODEL_DIR%\%LUNG_CANCER_MODEL%"
+    ) else (
+        echo  [WARN] %LUNG_CANCER_MODEL% is incomplete ^(!FILE_SIZE! bytes^). Re-downloading...
+        del "%MODEL_DIR%\%LUNG_CANCER_MODEL%"
     )
-    echo  [WARN] %LUNG_CANCER_MODEL% is incomplete ^(!FILE_SIZE! bytes^). Re-downloading...
-    del "%MODEL_DIR%\%LUNG_CANCER_MODEL%"
 )
 
 echo  [DOWNLOAD] Downloading lung cancer model from HuggingFace (~102 MB)...
