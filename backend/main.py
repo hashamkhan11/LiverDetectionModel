@@ -43,22 +43,22 @@ try:
     if _tf_ver >= (2, 16):
         import keras
         from keras.models import load_model as keras_load_model
-        from keras.layers import Dense as _BaseDense
+        import keras.layers as _kl
     else:
         from tensorflow.keras.models import load_model as keras_load_model
-        from tensorflow.keras.layers import Dense as _BaseDense
+        import tensorflow.keras.layers as _kl
 
-    # Compatibility shim: older keras doesn't know about quantization_config
-    # which newer keras adds to Dense.get_config(). Accept and ignore it.
-    class _QDense(_BaseDense):
-        def __init__(self, *a, quantization_config=None, **kw):
-            super().__init__(*a, **kw)
+    # Keras 3.4+ adds quantization_config to Dense.get_config(). Older keras
+    # rejects it during deserialization. Patch Dense.__init__ in-place so the
+    # built-in module-path lookup still works but the extra kwarg is accepted.
+    _orig_dense_init = _kl.Dense.__init__
+    def _patched_dense_init(self, *a, quantization_config=None, **kw):
+        _orig_dense_init(self, *a, **kw)
+    _kl.Dense.__init__ = _patched_dense_init
 
-    _KERAS_COMPAT = {"Dense": _QDense}
     TF_AVAILABLE = True
     print(f"[OK] TensorFlow {_tf.__version__} / Keras available")
 except Exception:
-    _KERAS_COMPAT = {}
     TF_AVAILABLE = False
     print("[WARN] TensorFlow not installed -- lung cancer model skipped")
 
@@ -280,11 +280,7 @@ LUNG_CANCER_THRESHOLD = 0.99995
 
 if TF_AVAILABLE and os.path.exists(LUNG_CANCER_PATH):
     try:
-        lung_cancer_model = keras_load_model(
-            LUNG_CANCER_PATH,
-            custom_objects=_KERAS_COMPAT,
-            compile=False,
-        )
+        lung_cancer_model = keras_load_model(LUNG_CANCER_PATH, compile=False)
         LUNG_CANCER_ENABLED = True
         print("[OK] Lung cancer model loaded (Stage 2 ENABLED)")
     except Exception as e:
