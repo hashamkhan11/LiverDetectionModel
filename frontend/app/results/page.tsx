@@ -405,7 +405,7 @@ export default function ResultsPage() {
           </div>
         )}
 
-        {heatmapPanel('lung', isCancer)}
+        {isCancer && heatmapPanel('lung', true)}
 
         {downloadBtn}
 
