@@ -54,6 +54,25 @@ if %PY_MINOR% gtr 11 (
 echo  [OK] Python %PY_VER% -- compatible.
 echo.
 
+:: ════════════════════════════════════════════════════════════
+::  PYTHON PACKAGES
+:: ════════════════════════════════════════════════════════════
+echo  Installing Python packages...
+echo  (This may take a few minutes the first time)
+echo.
+
+:: Remove standalone keras if present -- it conflicts with tensorflow's bundled keras
+pip uninstall keras -y >nul 2>&1
+
+pip install -r "%SCRIPT_DIR%backend\requirements.txt" --timeout 300 --retries 5 -q --disable-pip-version-check
+if %errorlevel% neq 0 (
+    echo  ERROR: Failed to install Python packages. Check your internet and try again.
+    pause
+    exit /b 1
+)
+echo  [OK] Python packages ready.
+echo.
+
 :: ── Create model folder if missing ────────────────────────────
 if not exist "%MODEL_DIR%" (
     mkdir "%MODEL_DIR%"
