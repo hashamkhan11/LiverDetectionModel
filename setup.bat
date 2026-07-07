@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 title LiverDetect AI -- Setup
 color 0B
 cls
@@ -65,8 +66,13 @@ if not exist "%MODEL_DIR%" (
 echo  Checking %LIVER_MODEL%...
 
 if exist "%MODEL_DIR%\%LIVER_MODEL%" (
-    echo  [SKIP] %LIVER_MODEL% already in place.
-    goto :check_tumor
+    for %%A in ("%MODEL_DIR%\%LIVER_MODEL%") do set FILE_SIZE=%%~zA
+    if !FILE_SIZE! GEQ 35000000 (
+        echo  [SKIP] %LIVER_MODEL% already in place ^(!FILE_SIZE! bytes^).
+        goto :check_tumor
+    )
+    echo  [WARN] %LIVER_MODEL% is incomplete ^(!FILE_SIZE! bytes^). Re-downloading...
+    del "%MODEL_DIR%\%LIVER_MODEL%"
 )
 
 echo  [DOWNLOAD] Downloading liver model from HuggingFace (~43 MB)...
@@ -101,8 +107,13 @@ echo.
 echo  Checking %TUMOR_MODEL%...
 
 if exist "%MODEL_DIR%\%TUMOR_MODEL%" (
-    echo  [SKIP] %TUMOR_MODEL% already in place.
-    goto :check_backend_env
+    for %%A in ("%MODEL_DIR%\%TUMOR_MODEL%") do set FILE_SIZE=%%~zA
+    if !FILE_SIZE! GEQ 90000000 (
+        echo  [SKIP] %TUMOR_MODEL% already in place ^(!FILE_SIZE! bytes^).
+        goto :check_backend_env
+    )
+    echo  [WARN] %TUMOR_MODEL% is incomplete ^(!FILE_SIZE! bytes^). Re-downloading...
+    del "%MODEL_DIR%\%TUMOR_MODEL%"
 )
 
 echo  [DOWNLOAD] Downloading tumor model from HuggingFace (~108 MB)...
@@ -138,8 +149,13 @@ echo.
 echo  Checking %LUNG_CLS_MODEL%...
 
 if exist "%MODEL_DIR%\%LUNG_CLS_MODEL%" (
-    echo  [SKIP] %LUNG_CLS_MODEL% already in place.
-    goto :check_lung_cancer
+    for %%A in ("%MODEL_DIR%\%LUNG_CLS_MODEL%") do set FILE_SIZE=%%~zA
+    if !FILE_SIZE! GEQ 35000000 (
+        echo  [SKIP] %LUNG_CLS_MODEL% already in place ^(!FILE_SIZE! bytes^).
+        goto :check_lung_cancer
+    )
+    echo  [WARN] %LUNG_CLS_MODEL% is incomplete ^(!FILE_SIZE! bytes^). Re-downloading...
+    del "%MODEL_DIR%\%LUNG_CLS_MODEL%"
 )
 
 echo  [DOWNLOAD] Downloading lung classifier from HuggingFace (~45 MB)...
@@ -171,8 +187,13 @@ echo.
 echo  Checking %LUNG_CANCER_MODEL%...
 
 if exist "%MODEL_DIR%\%LUNG_CANCER_MODEL%" (
-    echo  [SKIP] %LUNG_CANCER_MODEL% already in place.
-    goto :check_backend_env
+    for %%A in ("%MODEL_DIR%\%LUNG_CANCER_MODEL%") do set FILE_SIZE=%%~zA
+    if !FILE_SIZE! GEQ 85000000 (
+        echo  [SKIP] %LUNG_CANCER_MODEL% already in place ^(!FILE_SIZE! bytes^).
+        goto :check_backend_env
+    )
+    echo  [WARN] %LUNG_CANCER_MODEL% is incomplete ^(!FILE_SIZE! bytes^). Re-downloading...
+    del "%MODEL_DIR%\%LUNG_CANCER_MODEL%"
 )
 
 echo  [DOWNLOAD] Downloading lung cancer model from HuggingFace (~102 MB)...
