@@ -65,7 +65,7 @@ function ScanPageInner() {
         sessionStorage.setItem('patient_name',   patientName.trim())
         sessionStorage.setItem('patient_age',    patientAge)
         sessionStorage.setItem('patient_gender', patientGender)
-        const scanId = await saveScan(user.uid, file.name, result, 'liver')
+        const scanId = await saveScan(user.uid, file.name, result, 'liver', { name: patientName.trim(), age: patientAge, gender: patientGender })
         sessionStorage.setItem('liver_scan_id', scanId)
       } else {
         const result = await predictLungScan(file)
@@ -75,7 +75,8 @@ function ScanPageInner() {
         sessionStorage.setItem('patient_name',   patientName.trim())
         sessionStorage.setItem('patient_age',    patientAge)
         sessionStorage.setItem('patient_gender', patientGender)
-        await saveScan(user.uid, file.name, result, 'lung')
+        const lungScanId = await saveScan(user.uid, file.name, result, 'lung', { name: patientName.trim(), age: patientAge, gender: patientGender })
+        sessionStorage.setItem('lung_scan_id', lungScanId)
       }
       router.push('/results')
     } catch (err) {

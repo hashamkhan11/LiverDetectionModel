@@ -8,6 +8,7 @@ import {
   Loader2, ChevronRight, Info, Eye, EyeOff, XCircle, Wind, Heart,
   Download,
 } from 'lucide-react'
+import jsPDF from 'jspdf'
 import { submitEvaluation } from '@/lib/api'
 import { saveEvaluation } from '@/lib/firestore'
 import { useRequireAuth } from '@/hooks/useRequireAuth'
@@ -28,12 +29,14 @@ export default function ResultsPage() {
   const [patientName,   setPatientName]   = useState('')
   const [patientAge,    setPatientAge]    = useState('')
   const [patientGender, setPatientGender] = useState('')
+  const [lungActualClass, setLungActualClass] = useState<'cancer' | 'non-cancer' | null>(null)
+  const [lungSubmitted,  setLungSubmitted]    = useState(false)
+  const [lungSubmitting, setLungSubmitting]   = useState(false)
 
   const handleDownloadPDF = async () => {
     if (!result) return
     setDownloading(true)
     try {
-      const { default: jsPDF } = await import('jspdf')
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
       const W = 210, mg = 18, cW = W - mg * 2
       let y = mg
@@ -203,7 +206,7 @@ export default function ResultsPage() {
     setScanType(st)
     const raw = sessionStorage.getItem(st === 'liver' ? 'liver_result' : 'lung_result')
     const fn  = sessionStorage.getItem(st === 'liver' ? 'liver_filename' : 'lung_filename') ?? ''
-    const sid = sessionStorage.getItem('liver_scan_id') ?? ''
+    const sid = sessionStorage.getItem(st === 'liver' ? 'liver_scan_id' : 'lung_scan_id') ?? ''
     setPatientName(sessionStorage.getItem('patient_name') ?? '')
     setPatientAge(sessionStorage.getItem('patient_age') ?? '')
     setPatientGender(sessionStorage.getItem('patient_gender') ?? '')
@@ -223,6 +226,19 @@ export default function ResultsPage() {
       setSubmitted(true)
     } catch { /* best-effort */ }
     finally { setSubmitting(false) }
+  }
+
+  const handleLungSubmit = async () => {
+    if (!result || !lungActualClass) return
+    setLungSubmitting(true)
+    try {
+      await Promise.all([
+        submitEvaluation(filename, result.result_class, lungActualClass, result.cancer_probability ?? 0),
+        scanId ? saveEvaluation(scanId, lungActualClass, result.result_class) : Promise.resolve(),
+      ])
+      setLungSubmitted(true)
+    } catch { /* best-effort */ }
+    finally { setLungSubmitting(false) }
   }
 
   if (authLoading || !result) return (
@@ -427,6 +443,39 @@ export default function ResultsPage() {
         )}
 
         {isCancer && heatmapPanel('lung', true)}
+
+        {/* Lung Feedback */}
+        {!lungSubmitted ? (
+          <div className="bg-[#0F1018] border border-[#1E2130] rounded-2xl p-6">
+            <h2 className="font-semibold text-slate-200 mb-1 text-sm">Was this prediction correct?</h2>
+            <p className="text-xs text-slate-500 mb-5">Your feedback is used to calculate evaluation metrics.</p>
+            <div className="flex gap-3 mb-5">
+              {(['cancer', 'non-cancer'] as const).map(cls => (
+                <button key={cls} onClick={() => setLungActualClass(cls)}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+                    lungActualClass === cls
+                      ? cls === 'cancer'
+                        ? 'bg-rose-500/15 border-rose-500/50 text-rose-400'
+                        : 'bg-[#34D399]/15 border-[#34D399]/50 text-[#34D399]'
+                      : 'border-[#1E2130] bg-[#0A0B14] text-slate-500 hover:border-[#282B40]'
+                  }`}>
+                  {cls === 'cancer' ? 'Yes, Cancer' : 'No, Healthy'}
+                </button>
+              ))}
+            </div>
+            <button onClick={handleLungSubmit} disabled={!lungActualClass || lungSubmitting}
+              className="w-full flex items-center justify-center gap-2 bg-[#00C2FF] hover:bg-[#22D3EE] disabled:bg-[#1E2130] disabled:text-slate-600 disabled:cursor-not-allowed text-[#08090F] font-bold py-3 rounded-xl transition-all text-sm shadow-[0_0_16px_rgba(0,194,255,0.2)] disabled:shadow-none">
+              {lungSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              Submit Feedback
+            </button>
+          </div>
+        ) : (
+          <div className="bg-[#34D399]/10 border border-[#34D399]/25 rounded-2xl p-5 text-center animate-fade-up">
+            <CheckCircle2 className="w-6 h-6 text-[#34D399] mx-auto mb-1.5" />
+            <p className="text-[#34D399] text-sm font-semibold">Feedback recorded</p>
+            <p className="text-[#34D399]/60 text-xs mt-0.5">Evaluation metrics updated.</p>
+          </div>
+        )}
 
         {downloadBtn}
 

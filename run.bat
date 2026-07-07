@@ -13,8 +13,8 @@ set FRONTEND=%~dp0frontend
 start "Backend" /d "%BACKEND%" cmd /k "python main.py"
 echo  [1/2] Backend starting...
 
-if not exist "%FRONTEND%\node_modules" (
-    echo  [npm] Installing frontend packages -- first time only...
+if not exist "%FRONTEND%\node_modules\jspdf" (
+    echo  [npm] Installing frontend packages...
     pushd "%FRONTEND%"
     call npm install --silent
     popd

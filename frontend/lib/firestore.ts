@@ -28,7 +28,8 @@ export async function saveScan(
   userId: string,
   filename: string,
   result: PredictionResult,
-  scanType: ScanType = 'liver'
+  scanType: ScanType = 'liver',
+  patientInfo?: { name?: string; age?: string; gender?: string }
 ): Promise<string> {
   const fileType = filename.toLowerCase().endsWith('.nii') ||
                    filename.toLowerCase().endsWith('.nii.gz')
@@ -39,6 +40,9 @@ export async function saveScan(
     filename,
     fileType,
     scanType,
+    patientName:   patientInfo?.name   || null,
+    patientAge:    patientInfo?.age    || null,
+    patientGender: patientInfo?.gender || null,
     timestamp: serverTimestamp(),
     result: {
       prediction:          result.prediction,
@@ -59,8 +63,8 @@ export async function saveScan(
 
 export async function saveEvaluation(
   scanId: string,
-  actualClass: 'tumor' | 'non-tumor',
-  predictedClass: 'tumor' | 'non-tumor'
+  actualClass: 'tumor' | 'non-tumor' | 'cancer' | 'non-cancer',
+  predictedClass: string
 ) {
   await updateDoc(doc(db, 'scans', scanId), {
     evaluation: {
@@ -83,12 +87,15 @@ export async function getScanHistory(userId: string): Promise<ScanRecord[]> {
     const st: ScanType = data.scanType ?? 'liver'
     const isLung = st === 'lung'
     return {
-      id:         d.id,
-      userId:     data.userId,
-      filename:   data.filename,
-      fileType:   data.fileType,
-      scanType:   st,
-      timestamp:  (data.timestamp as Timestamp)?.toDate() ?? new Date(),
+      id:            d.id,
+      userId:        data.userId,
+      filename:      data.filename,
+      fileType:      data.fileType,
+      scanType:      st,
+      timestamp:     (data.timestamp as Timestamp)?.toDate() ?? new Date(),
+      patientName:   data.patientName   ?? undefined,
+      patientAge:    data.patientAge    ?? undefined,
+      patientGender: data.patientGender ?? undefined,
       result: {
         prediction:              data.result.prediction,
         result_class:            data.result.resultClass,
@@ -141,18 +148,26 @@ export async function getScanById(scanId: string): Promise<ScanRecord | null> {
   } as ScanRecord
 }
 
-export async function getPersonalMetrics(userId: string): Promise<MetricsData> {
+export async function resetUserEvaluations(userId: string, organ?: 'liver' | 'lung'): Promise<void> {
   const scans = await getScanHistory(userId)
-  const evaluated = scans.filter(s => s.evaluation && s.scanType === 'liver')
+  const toReset = scans.filter(s => s.evaluation && (!organ || s.scanType === organ))
+  await Promise.all(toReset.map(s => updateDoc(doc(db, 'scans', s.id), { evaluation: null })))
+}
+
+export async function getPersonalMetrics(userId: string, organ: 'liver' | 'lung' = 'liver'): Promise<MetricsData> {
+  const scans = await getScanHistory(userId)
+  const positive = organ === 'liver' ? 'tumor'     : 'cancer'
+  const negative = organ === 'liver' ? 'non-tumor' : 'non-cancer'
+  const evaluated = scans.filter(s => s.evaluation && s.scanType === organ)
 
   let tp = 0, tn = 0, fp = 0, fn = 0
   for (const s of evaluated) {
     const pred   = s.result.result_class
     const actual = s.evaluation!.actualClass
-    if (pred === 'tumor'     && actual === 'tumor')     tp++
-    if (pred === 'non-tumor' && actual === 'non-tumor') tn++
-    if (pred === 'tumor'     && actual === 'non-tumor') fp++
-    if (pred === 'non-tumor' && actual === 'tumor')     fn++
+    if (pred === positive && actual === positive) tp++
+    if (pred === negative && actual === negative) tn++
+    if (pred === positive && actual === negative) fp++
+    if (pred === negative && actual === positive) fn++
   }
 
   const total     = tp + tn + fp + fn

@@ -7,9 +7,12 @@ export interface ScanRecord {
   fileType: 'nifti' | 'image'
   scanType: ScanType
   timestamp: Date
+  patientName?: string
+  patientAge?: string
+  patientGender?: string
   result: PredictionResult
   evaluation?: {
-    actualClass: 'tumor' | 'non-tumor'
+    actualClass: 'tumor' | 'non-tumor' | 'cancer' | 'non-cancer'
     isCorrect: boolean
     submittedAt: Date
   } | null

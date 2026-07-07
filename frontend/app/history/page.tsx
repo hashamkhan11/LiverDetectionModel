@@ -49,7 +49,12 @@ export default function HistoryPage() {
 
   const filtered = useMemo(() => scans
     .filter(s => matchFilter(s, filter))
-    .filter(s => search === '' || s.filename.toLowerCase().includes(search.toLowerCase())),
+    .filter(s => {
+      if (search === '') return true
+      const q = search.toLowerCase()
+      return s.filename.toLowerCase().includes(q) ||
+        (s.patientName ?? '').toLowerCase().includes(q)
+    }),
     [scans, filter, search])
 
   if (authLoading || loading) return (
@@ -82,7 +87,7 @@ export default function HistoryPage() {
           <div className="relative flex-1">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
             <input
-              type="text" placeholder="Search by filename…"
+              type="text" placeholder="Search by filename or patient name…"
               value={search} onChange={e => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 border border-[#1E2130] rounded-xl text-sm bg-[#0F1018] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-[#00C2FF]/25 focus:border-[#00C2FF]/50 transition-all"
             />
@@ -143,7 +148,12 @@ export default function HistoryPage() {
                             ? <Wind className="w-3.5 h-3.5 text-[#2DD4BF]" />
                             : <Heart className="w-3.5 h-3.5 text-[#818CF8]" />}
                         </div>
-                        <p className="text-sm font-medium text-slate-200 truncate">{scan.filename}</p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-200 truncate">{scan.filename}</p>
+                          {scan.patientName && (
+                            <p className="text-[11px] text-slate-500 truncate">{scan.patientName}</p>
+                          )}
+                        </div>
                       </div>
 
                       <div className="col-span-2 text-xs text-slate-500">
