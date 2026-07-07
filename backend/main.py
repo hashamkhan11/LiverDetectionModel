@@ -265,7 +265,7 @@ else:
 LUNG_CANCER_PATH = os.path.join(MODEL_DIR, "lung_resnet50_stage1_safe.keras")
 lung_cancer_model = None
 LUNG_CANCER_ENABLED = False
-LUNG_CANCER_THRESHOLD = 0.99
+LUNG_CANCER_THRESHOLD = 0.99995
 
 if TF_AVAILABLE and os.path.exists(LUNG_CANCER_PATH):
     try:
@@ -629,16 +629,16 @@ def preprocess_for_lung_classifier(image_bytes: bytes) -> torch.Tensor:
 
 def preprocess_for_lung_cancer(image_bytes: bytes) -> np.ndarray:
     """
-    Matches notebook inference exactly:
-    grayscale → resize 224 → normalize [0,1] → stack to 3-channel → (1,224,224,3)
-    Model internally applies resnet50.preprocess_input(x * 255.0)
+    Matches simra784 reference exactly:
+    grayscale → resize 224 → /255 → per-image z-score → stack to 3-channel → (1,224,224,3)
     """
     arr = np.frombuffer(image_bytes, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
-    img = cv2.resize(img, (224, 224), interpolation=cv2.INTER_AREA)
+    img = cv2.resize(img, (224, 224))
     img = img.astype(np.float32) / 255.0
-    img = np.stack([img, img, img], axis=-1)   # (224,224,3)
-    return np.expand_dims(img, axis=0)          # (1,224,224,3)
+    img = (img - np.mean(img)) / (np.std(img) + 1e-8)   # per-image z-score
+    img = np.stack([img, img, img], axis=-1)              # (224,224,3)
+    return np.expand_dims(img, axis=0)                    # (1,224,224,3)
 
 
 def _verify_lung_image(image_bytes: bytes, mime_type: str) -> tuple:
@@ -1041,7 +1041,7 @@ async def predict_lung(file: UploadFile = File(...)):
 
         print(f"  Lung prob: {lung_prob:.3f} | Non-lung prob: {nonlung_prob:.3f}")
 
-        if lung_prob < 0.5:
+        if lung_prob < 0.90:
             print("  [STOP] Classifier says not a lung image")
             return JSONResponse(content={
                 "prediction": "Not a Lung Scan",
