@@ -1,3 +1,13 @@
+---
+title: Liver Tumor Detection API
+emoji: 🩺
+colorFrom: purple
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Liver Tumor Detection System
 
 AI-powered liver tumor detection from CT scans using deep learning (ResNet18, LiTS dataset).
