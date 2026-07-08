@@ -970,6 +970,44 @@ async def predict(file: UploadFile = File(...)):
                     "heatmap_error": None,
                 })
 
+            # ── Stage 1b: Liver presence check ───────────────────────
+            if LIVER_MODEL_ENABLED:
+                liver_conf = _liver_prob_model(img_array)
+                liver_prob_out = round(liver_conf * 100, 1)
+                print(f"  [Liver model] liver confidence: {liver_prob_out}%")
+                if liver_conf < 0.50:
+                    print("  [STOP] Liver model: not a liver image")
+                    return JSONResponse(content={
+                        "prediction": "Not a Liver Scan",
+                        "result_class": "not-liver",
+                        "tumor_probability": 0,
+                        "non_tumor_probability": 0,
+                        "liver_probability": liver_prob_out,
+                        "slices_analyzed": 1,
+                        "decision_reason": f"Liver model confidence {liver_prob_out}% is below 50% threshold.",
+                        "heatmap_image": None,
+                        "original_image": None,
+                        "heatmap_error": None,
+                    })
+            else:
+                is_liver_2d, score_pct = stage1_image(img_array)
+                liver_prob_out = score_pct
+                print(f"  [HU check] liver pixel score: {score_pct}%")
+                if not is_liver_2d:
+                    print("  [STOP] HU check: not a liver image")
+                    return JSONResponse(content={
+                        "prediction": "Not a Liver Scan",
+                        "result_class": "not-liver",
+                        "tumor_probability": 0,
+                        "non_tumor_probability": 0,
+                        "liver_probability": score_pct,
+                        "slices_analyzed": 1,
+                        "decision_reason": f"Only {score_pct}% of pixels are in liver intensity range (threshold: >8%).",
+                        "heatmap_image": None,
+                        "original_image": None,
+                        "heatmap_error": None,
+                    })
+
             # ── Stage 2: Tumor detection ──────────────────────────────
             print(f"\n[Stage 2] Tumor analysis (single image)...")
             tensor = preprocess_for_tumor(img_array)
