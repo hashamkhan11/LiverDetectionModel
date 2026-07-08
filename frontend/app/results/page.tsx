@@ -162,7 +162,7 @@ export default function ResultsPage() {
         const remainH = 297 - mg - 20 - y
         const imgH = Math.min(remainH, 68)
 
-        if (result.heatmap_image) {
+        if (result.heatmap_image && isPos) {
           const imgW = (cW - 4) / 2
           doc.setFillColor(0, 0, 0); doc.rect(mg, y, imgW, imgH, 'F')
           doc.addImage('data:image/png;base64,' + result.original_image, 'PNG', mg, y, imgW, imgH)
